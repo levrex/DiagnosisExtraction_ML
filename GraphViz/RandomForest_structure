@@ -1,0 +1,17 @@
+digraph Tree {
+node [shape=box, style="filled, rounded", color="black", fontname=helvetica] ;
+edge [fontname=helvetica] ;
+0 [label=<knie &le; 0.055<br/>gini = 0.498<br/>samples = 100.0%<br/>value = [0.465, 0.535]<br/>class = NEGATIVE>, fillcolor="#e5f2fc"] ;
+1 [label=<zien &le; 0.091<br/>gini = 0.493<br/>samples = 94.5%<br/>value = [0.44, 0.56]<br/>class = NEGATIVE>, fillcolor="#d5eaf9"] ;
+0 -> 1 [labeldistance=2.5, labelangle=45, headlabel="True"] ;
+2 [label=<gini = 0.488<br/>samples = 89.1%<br/>value = [0.423, 0.577]<br/>class = NEGATIVE>, fillcolor="#cae5f8"] ;
+1 -> 2 ;
+3 [label=<gini = 0.363<br/>samples = 5.5%<br/>value = [0.762, 0.238]<br/>class = POSITIVE>, fillcolor="#eda877"] ;
+1 -> 3 ;
+4 [label=<lrechter &le; 0.18<br/>gini = 0.293<br/>samples = 5.5%<br/>value = [0.821, 0.179]<br/>class = POSITIVE>, fillcolor="#eb9c64"] ;
+0 -> 4 [labeldistance=2.5, labelangle=-45, headlabel="False"] ;
+5 [label=<gini = 0.08<br/>samples = 5.1%<br/>value = [0.958, 0.042]<br/>class = POSITIVE>, fillcolor="#e68642"] ;
+4 -> 5 ;
+6 [label=<gini = 0.0<br/>samples = 0.4%<br/>value = [0.0, 1.0]<br/>class = NEGATIVE>, fillcolor="#399de5"] ;
+4 -> 6 ;
+}
