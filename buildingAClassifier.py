@@ -15,6 +15,7 @@ from scipy import interp
 from sklearn.model_selection import learning_curve
 from sklearn import metrics
 from sklearn.model_selection import ShuffleSplit
+from sklearn.metrics import confusion_matrix
 
 SEED = 26062019
 OUTPUT_PATH = r'output_files/'
@@ -54,6 +55,16 @@ def simpleCleaning(sentence, lemma=False): # Keep in mind: this function removes
         return lemmatizingText(sentence)
     else :
         return sentence
+    
+def processArtefactsXML(entry):
+    """
+    Apply this function if your data contains XML artefacts 
+    """
+    correction_map ={'ã«' : 'e', 'ã¨' : 'e', 'ã¶': 'o', '\r' : ' ', '\n' : ' ', '\t': ' ', '·' : ' ', 
+                     'ã©' : 'e', 'ã¯' : 'i', 'ãº':'u', 'ã³' : 'o', '\xa0' : ' '}
+    for char in correction_map.keys():
+        entry = entry.replace(char, correction_map[char])
+    return entry
 
 def score_binary(CL, inclFirst = True ):
     dummi = CL
@@ -112,32 +123,84 @@ def writePredictionsToFile(name, pred, true):
     df.to_csv(OUTPUT_PATH + 'pred' + name.replace(" ", "") + '.csv', sep='|', index=False)
     return
 
+def assessPerformance_proba(estimator, X_test, y_test, fold, tprs, aucs, d_aucs={}): 
+    """
+    
+    Calculates the true positive rate, the false positive rate and 
+    the Area under the Curve for the Receiver Operator Curve (ROC)
+    for the provided classifier (that calculates probabilities!)
+    
+    tprs = list with true positive rates 
+    aucs = list with area under the curves
+    d_aucs = dictionary with the following attributes:
+        0. the predictions (proba), 
+        1. true positive rate
+        2. classifier (a.k.a. model)
+        3. test index  (of fold)
+        4. train index (of fold)
+    X_test = values of test set
+    y_test = actual label of the test set
+    Disclaimer: you could also use this function to assess the auc 
+        of the trainingsset in addition to the testset. If you are
+        interested if the fitted model covers the whole trainingsset.
+        
+    """
+    fpr_scale = np.linspace(0, 1, 100)
+    probas_ = estimator.predict_proba(X_test)
+    fpr, tpr, thresholds = metrics.roc_curve(y_test, probas_[:, 1])
+    roc_auc = metrics.auc(fpr, tpr)
+    aucs.append(roc_auc)
+    tprs.append(interp(fpr_scale, fpr, tpr))
+    tprs[-1][0] = 0.0
+    d_aucs[roc_auc] = [probas_[:,1], \
+          interp(fpr_scale, fpr, tpr), 
+          estimator, fold[0], fold[1]]
+    return tprs, aucs, d_aucs
+
+def optimalCutoff(pred, true, lbl, plot=False):
+    """
+    Input:
+    true = true label
+    pred = prediction of classifier
+    
+    Description:
+    Determine the optimal cutoff / threshold for classification.
+    The optimal cut-off is the balance between sensitivity and specificity
+    """
+    fpr, tpr, thresholds = metrics.roc_curve(true, pred)
+    i = np.arange(len(tpr)) # index for df
+    roc = pd.DataFrame({'fpr' : pd.Series(fpr, index=i),'tpr' : pd.Series(tpr, index = i), '1-fpr' : pd.Series(1-fpr, index = i), 'tf' : pd.Series(tpr - (1-fpr), index = i), 'thresholds' : pd.Series(thresholds, index = i)})
+    cutoff = roc.ix[(roc.tf-0).abs().argsort()[:1]]['thresholds']
+    if plot == True:
+        fig, ax = plt.subplots()
+        plt.plot(roc['tpr'])
+        plt.plot(roc['1-fpr'], color = 'red')
+        plt.xlabel('1-False Positive Rate')
+        plt.ylabel('True Positive Rate')
+        plt.title('Receiver operating characteristic')
+        ax.set_xticklabels([])
+        plt.savefig('figures/cutoff_plot/CutOffPlot_' + lbl + '.png')
+        print(roc.ix[(roc.tf-0).abs().argsort()[:1]])
+    return cutoff
+
 def plotFolds(clf, X, y, l_folds, color, lbl):
     """
     y_train should be binarized
     """
-    tprs = []
-    aucs = []
-    fold = 0
-    fpr_scale = np.linspace(0, 1, 100)
+    tprs, aucs = [], []
+    tprs_t, aucs_t = [], []
     d_aucs = {}
     for train_index, test_index in l_folds:
         #print(train_index, test_index)
+        
+        fold = [test_index, train_index]
         estimator = clf.fit(X[train_index], y[train_index])
-        probas_ = estimator.predict_proba(X[test_index])
-        fpr, tpr, thresholds = metrics.roc_curve(y[test_index], probas_[:, 1])
-        tprs.append(interp(fpr_scale, fpr, tpr))
-        tprs[-1][0] = 0.0
-        roc_auc = metrics.auc(fpr, tpr)
-        aucs.append(roc_auc)
-        d_aucs[roc_auc] = [probas_[:,1], interp(fpr_scale, fpr, tpr), 
-               estimator, test_index, train_index]# tpr # interp(fpr_scale, fpr, tpr)
-        
-        #plt.plot(fpr, tpr, lw=1, alpha=0.3,
-        #        label='ROC fold %d (AUC = %0.2f)' % (fold, roc_auc), color=color)
-        fold += 1
-        
-    
+        tprs, aucs, d_aucs = assessPerformance_proba(estimator, X[test_index], 
+                                              y[test_index], fold, tprs, aucs, 
+                                              d_aucs)
+        tprs_t, aucs_t = assessPerformance_proba(estimator, X[train_index], 
+                                              y[train_index], fold, tprs_t, 
+                                              aucs_t)[:2]
     aucs.sort()
     middleIndex = round((len(aucs) - 1)/2) # normally 5 -> if 10 fold
     #print(lbl + ': ' + str(aucs[middleIndex]))
@@ -145,7 +208,10 @@ def plotFolds(clf, X, y, l_folds, color, lbl):
     #plt = classifyOnLowerPrevalence(clf, medianModel, X_train, y_train, .2)
     foldTrueLbl = y[medianModel[3]]
     writePredictionsToFile(lbl, medianModel[0], foldTrueLbl)
+    cut_off = optimalCutoff(medianModel[0], foldTrueLbl, lbl, False)
+    medianModel.append(cut_off)
     plt, mean_auc = plotSTD(tprs, aucs, color, lbl)
+    plotSTD(tprs_t, aucs_t, color, 'Train-score ' + lbl, '-', 5, 0)
     return plt, mean_auc, aucs, medianModel
 
 def classifyOnLowerPrevalence(clf, X, y, positive_prev, lbl, color):
@@ -198,9 +264,15 @@ def AUCtoCI(auc, std_auc, alpha=.95):
     ci[ci > 1] = 1
     return ci 
 
-def plotSTD(tprs, aucs, color, lbl, linestyle='-', lw=5):
+def plotSTD(tprs, aucs, color, lbl, linestyle='-', lw=5, vis=1):
     """
     Plot the standard deviation of the ROC-curves
+    
+    Input:
+        tprs = list of true positive rates per iteration
+        aucs = list of area under the curve per iteration
+        lbl = classifier
+        vis = visualize
     """
     #print(medianModel)
     #print(medianModel[3])
@@ -210,16 +282,19 @@ def plotSTD(tprs, aucs, color, lbl, linestyle='-', lw=5):
     
     mean_auc = metrics.auc(mean_fpr, mean_tpr)
     std_auc = np.std(aucs)
-    plt.plot(mean_fpr, mean_tpr, color=color,
-        label=lbl + r' mean kfold (AUC = %0.2f $\pm$ %s)' % (mean_auc, std_auc),
-        alpha=.5, linestyle=linestyle, linewidth=lw)
     
     std_tpr = np.std(tprs, axis=0)
     tprs_upper = np.minimum(mean_tpr + std_tpr, 1)
     tprs_lower = np.maximum(mean_tpr - std_tpr, 0)
-    plt.fill_between(mean_fpr, tprs_lower, tprs_upper, color=color, alpha=.1)
     print(lbl + ' ' + str(mean_auc) +' (std : +/-' + str(std_auc) + ' )')
-    return plt, std_auc
+    if vis==1:
+        plt.plot(mean_fpr, mean_tpr, color=color,
+            label=lbl + r' mean kfold (AUC = %0.2f $\pm$ %s)' % (mean_auc, std_auc),
+            alpha=.5, linestyle=linestyle, linewidth=lw)
+        plt.fill_between(mean_fpr, tprs_lower, tprs_upper, color=color, alpha=.1)
+        return plt, std_auc
+    else :
+        return
 
 def plotTrainSplit(clf, X_train, y_train, color, lbl, lw=3):
     """
@@ -231,40 +306,60 @@ def plotTrainSplit(clf, X_train, y_train, color, lbl, lw=3):
     plt.plot(fpr_t, tpr_t, color, lw=lw, label = lbl + ' (AUC = %0.2f' % (auc) + ')', alpha=0.1)
     return plt
 
+def assessPerformance(estimator, X_test, y_test, fold, tprs, aucs, d_aucs={}): 
+    """
+    Calculates the true positive rate, the false positive rate and 
+    the Area under the Curve for the Receiver Operator Curve (ROC) 
+    
+    tprs = list with true positive rates 
+    aucs = list with area under the curves
+    d_aucs = dictionary with aucs/ tprs/ estimator and test/train fold 
+        for every iteration
+    X_test = values of test set
+    y_test = actual label of the test set
+    Disclaimer: you could also use this function to assess the auc 
+        of the trainingsset in addition to the testset. If you are
+        interested if the fitted model covers the whole trainingsset.
+    """
+    fpr_scale = np.linspace(0, 1, 100)
+    pred = estimator.predict(X_test)
+    l_sorted_true = sortedPredictionList(pred, y_test)
+    tpr, fpr = score_binary(l_sorted_true)
+    roc_auc = np.trapz(tpr,fpr)
+    aucs.append(roc_auc)
+    tprs.append(interp(fpr_scale, fpr, tpr))
+    tprs[-1][0] = 0.0
+    d_aucs[roc_auc] = [np.array([binarize(val) for val in pred]), \
+          interp(fpr_scale, fpr, tpr), 
+          estimator, fold[0], fold[1]]
+    return tprs, aucs, d_aucs
+
 def plotBinaryROC(clf, lbl, X, y, l_folds, color):
     """
     Plot pseudo AUC for models that don't predict a probability
     """
     l_folds = preset_CV10Folds(X)
-    tprs = []
-    aucs = []
-    fold = 0
-    fpr_scale = np.linspace(0, 1, 100)
+    tprs, aucs = [], []
+    tprs_t, aucs_t = [], []
     d_aucs = {}
     for train_index, test_index in l_folds:
+        fold = [test_index, train_index]
         estimator = clf.fit(X[train_index], y[train_index])
-        pred = estimator.predict(X[test_index])
-        l_sorted_true = sortedPredictionList(pred, y[test_index])
-        tpr, fpr = score_binary(l_sorted_true)
-        roc_auc = np.trapz(tpr,fpr)
-        tprs.append(interp(fpr_scale, fpr, tpr))
-        tprs[-1][0] = 0.0
-        roc_auc = metrics.auc(fpr, tpr)
-        aucs.append(roc_auc)
-        d_aucs[roc_auc] = [np.array([binarize(val) for val in pred]), \
-              interp(fpr_scale, fpr, tpr), 
-              estimator, test_index, train_index]
-        fold += 1
+        tprs, aucs, d_aucs = assessPerformance(estimator, X[test_index], 
+                                              y[test_index], fold, tprs, aucs, 
+                                              d_aucs)
+        tprs_t, aucs_t = assessPerformance(estimator, X[train_index], 
+                                              y[train_index], fold, tprs_t, aucs_t, 
+                                              {})[:2]
     aucs.sort()
     middleIndex = round((len(aucs) - 1)/2) # normally 5 -> if 10 fold
     medianModel = d_aucs[aucs[middleIndex]]
-    #print(lbl + ': ' + str(aucs[middleIndex]))
     foldTrueLbl = np.array([binarize(val) for val in y[medianModel[3]]])
-    #plotTrainSplit(clf, X[medianModel[4]], np.array([binarize(val) for val in y[medianModel[4]]]), 
-    #                   color, lbl)
     writePredictionsToFile(lbl, medianModel[0], foldTrueLbl)
-    ## onderstaande ook nodig?
+    cut_off = optimalCutoff(medianModel[0], foldTrueLbl, lbl)
+    medianModel.append(cut_off)
     plt, mean_auc = plotSTD(tprs, aucs, color, lbl)
+    plotSTD(tprs_t, aucs_t, color, 'Train-score ' + lbl, '-', 5, 0)
     return plt, mean_auc, aucs, medianModel
 
 def plotCustomModelROC(clf, X, y, l_folds, lbl, color, linestyle='-'):
@@ -339,6 +434,59 @@ def plotCrossValidationROC(models, title, lbls, X, y, l_folds, ref_auc):
     plt.ylabel('Sensitivity (TPR)')
     plt.xlabel('1 - Specificity (FPR)')
     return plt, d_aucs, fitted_models
+
+def plot_confusion_matrix(y_true, y_pred, classes,
+                          normalize=False,
+                          title=None,
+                          cmap=plt.cm.Blues):
+    """
+    This function prints and plots the confusion matrix.
+    Normalization can be applied by setting `normalize=True`.
+    """
+    if not title:
+        if normalize:
+            title = 'Normalized confusion matrix'
+        else:
+            title = 'Confusion matrix, without normalization'
+
+    # Compute confusion matrix
+    cm = confusion_matrix(y_true, y_pred)
+    # Only use the labels that appear in the data
+    #classes = classes[unique_labels(y_true, y_pred)]
+    if normalize:
+        cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+        print("Normalized confusion matrix")
+    else:
+        print('Confusion matrix, without normalization')
+
+    print(cm)
+
+    fig, ax = plt.subplots()
+    im = ax.imshow(cm, interpolation='nearest', cmap=cmap)
+    ax.figure.colorbar(im, ax=ax)
+    # We want to show all ticks...
+    ax.set(xticks=np.arange(cm.shape[1]),
+           yticks=np.arange(cm.shape[0]),
+           # ... and label them with the respective list entries
+           xticklabels=classes, yticklabels=classes,
+           title=title,
+           ylabel='True label',
+           xlabel='Predicted label')
+
+    # Rotate the tick labels and set their alignment.
+    plt.setp(ax.get_xticklabels(), rotation=45, ha="right",
+             rotation_mode="anchor")
+
+    # Loop over data dimensions and create text annotations.
+    fmt = '.2f' if normalize else 'd'
+    thresh = cm.max() / 2.
+    for i in range(cm.shape[0]):
+        for j in range(cm.shape[1]):
+            ax.text(j, i, format(cm[i, j], fmt),
+                    ha="center", va="center",
+                    color="white" if cm[i, j] > thresh else "black")
+    fig.tight_layout()
+    return ax
 
 def plot_learning_curve(estimator, title, X, y, ylim=None, cv=None,
                         n_jobs=None, train_sizes=np.linspace(.1, 1.0, 5)):
