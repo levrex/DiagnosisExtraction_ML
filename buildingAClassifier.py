@@ -12,10 +12,13 @@ import pattern.nl as patNL
 import re
 from scipy import stats
 from scipy import interp
-from sklearn.model_selection import learning_curve
+from sklearn.model_selection import learning_curve, ShuffleSplit
 from sklearn import metrics
-from sklearn.model_selection import ShuffleSplit
 from sklearn.metrics import confusion_matrix
+from sklearn.feature_extraction.text import TfidfVectorizer
+from yellowbrick.target import FeatureCorrelation
+from yellowbrick.features.importances import FeatureImportances
+from yellowbrick.text import DispersionPlot
 
 SEED = 26062019
 OUTPUT_PATH = r'output_files/'
@@ -440,6 +443,7 @@ def plot_confusion_matrix(y_true, y_pred, classes,
                           title=None,
                           cmap=plt.cm.Blues):
     """
+    [SKLEARN function]
     This function prints and plots the confusion matrix.
     Normalization can be applied by setting `normalize=True`.
     """
@@ -487,6 +491,102 @@ def plot_confusion_matrix(y_true, y_pred, classes,
                     color="white" if cm[i, j] > thresh else "black")
     fig.tight_layout()
     return ax
+
+def plotFeatureCorrelation(X_train_fold, y_train_fold, nr_features, ngrams=None):
+    """
+    Draw a pearson correlation plot for the top n features.
+    
+    Input:
+        X_train_fold = trainingsset
+        y_train_fold = labels of the trainingsset
+        nr_features = specifies the nr of features to draw 
+            (descending order)
+        n_grams = chunk text on n_grams / motifs rather than
+            on whitespace
+    """
+    if ngrams != None:
+        count_vect = TfidfVectorizer(ngram_range=(ngrams, ngrams))
+    else :
+        count_vect = TfidfVectorizer()
+    X_train_tfidf = count_vect.fit_transform(X_train_fold) 
+    plt.figure(figsize=(8,6))
+    X_pd = pd.DataFrame(X_train_tfidf.toarray(), columns=count_vect.get_feature_names())
+    feature_to_plot =list(X_pd.sum().sort_values(ascending=False).keys()[:nr_features])
+    
+    visualizer = FeatureCorrelation(labels=feature_to_plot, size=(750, 750), sort=True)
+    visualizer.fit(X_pd[feature_to_plot], pd.Series(y_train_fold))
+    ax = visualizer.ax
+    ax.set_xlabel('Pearson Correlation', fontsize=18)
+    ax.tick_params(labelsize=16)
+    visualizer.finalize()
+    
+    plt.rcParams.update({'font.size': 55})
+    plt.title('Pearson Correlation of top ' + str(nr_features) + 
+              ' features with label', fontsize=20, fontweight='bold')
+    return plt
+
+def plotFeatureImportance(model, X_train_fold, y_train_fold, nr_features, ngrams=None):
+    """
+    Draw a feature importance plot for the top n features.
+    
+    Feature importance is calculated with the leave-one-out method
+    to assess the explained variance of said feature.
+    
+    Input:
+        X_train_fold = trainingsset
+        y_train_fold = labels of the trainingsset
+        nr_features = specifies the nr of features to draw 
+            (descending order)
+        n_grams = chunk text on n_grams / motifs rather than
+            on whitespace
+    """
+    if ngrams != None:
+        count_vect = TfidfVectorizer(ngram_range=(ngrams, ngrams))
+    else :
+        count_vect = TfidfVectorizer()
+    X_train_tfidf = count_vect.fit_transform(X_train_fold) 
+    plt.figure(figsize=(8,6))
+    X_pd = pd.DataFrame(X_train_tfidf.toarray(), columns=count_vect.get_feature_names())
+    feature_to_plot =list(X_pd.sum().sort_values(ascending=False).keys()[:nr_features])
+    
+    visualizer = FeatureImportances(model, labels=feature_to_plot, 
+                                    size=(750, 750), relative=False)
+    visualizer.fit(X_pd[feature_to_plot], pd.Series(y_train_fold))
+    ax = visualizer.ax
+    ax.set_xlabel('Feature Importance', fontsize=18)
+    ax.tick_params(labelsize=16)
+    visualizer.finalize()
+    
+    plt.rcParams.update({'font.size': 55})
+    plt.title('Feature Importance of top ' + str(nr_features) + 
+              ' features with label', fontsize=20, fontweight='bold')
+    return plt
+
+def plotLexicalDispersion(X_train_fold):
+    """
+    Draws a lexical dispersion plot which visualizes 
+    the homogeneity across the corpus. 
+    
+    Also confirms wheter or not the data is randomized, 
+    and visualizes the prevalence of features.
+    """
+    count = 0
+    d = {}
+    words = []
+    for x in X_train_fold:
+        words.append([i for i in x.split(' ')])
+        count+=1
+    d = np.array(words)
+    count_vect = TfidfVectorizer()
+    X_train_tfidf = count_vect.fit_transform(X_train_fold) 
+    X_pd = pd.DataFrame(X_train_tfidf.toarray(), columns=count_vect.get_feature_names())
+    feature_to_plot =list(X_pd.sum().sort_values(ascending=False).keys()[:20]) 
+    visualizer = DispersionPlot(feature_to_plot, size=(450, 450))
+    ax = visualizer.ax
+    ax.tick_params(labelsize=18)
+    visualizer.fit(d)
+    visualizer.poof()
+    return
 
 def plot_learning_curve(estimator, title, X, y, ylim=None, cv=None,
                         n_jobs=None, train_sizes=np.linspace(.1, 1.0, 5)):
