@@ -1,0 +1,7 @@
+scikit-learn==0.21.2
+pandas==0.23.0
+scipy==1.1.0
+numpy==1.14.3
+matplotlib==2.2.2
+pattern==3.6
+yellowbrick==0.9.1
