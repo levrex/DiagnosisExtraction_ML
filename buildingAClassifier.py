@@ -5,20 +5,22 @@ Created on Thu Jun 27 10:17:52 2019
 @author: tdmaarseveen
 """
 import collections
-import numpy as np
+from inspect import signature
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 import pattern.nl as patNL
 import re
-from scipy import stats
-from scipy import interp
+from scipy import stats, interp
 from sklearn.model_selection import learning_curve, ShuffleSplit
-from sklearn import metrics
-from sklearn.metrics import confusion_matrix
+from sklearn import metrics # 
+from sklearn.metrics import confusion_matrix, precision_recall_curve, average_precision_score
 from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn import tree
 from yellowbrick.target import FeatureCorrelation
 from yellowbrick.features.importances import FeatureImportances
 from yellowbrick.text import DispersionPlot
+
 
 SEED = 26062019
 OUTPUT_PATH = r'output_files/'
@@ -197,11 +199,13 @@ def plotFolds(clf, X, y, l_folds, color, lbl):
         #print(train_index, test_index)
         
         fold = [test_index, train_index]
-        estimator = clf.fit(X[train_index], y[train_index])
-        tprs, aucs, d_aucs = assessPerformance_proba(estimator, X[test_index], 
+        Xtr, Xte = X[train_index], X[test_index]
+        
+        estimator = clf.fit(Xtr, y[train_index])
+        tprs, aucs, d_aucs = assessPerformance_proba(estimator, Xte, 
                                               y[test_index], fold, tprs, aucs, 
                                               d_aucs)
-        tprs_t, aucs_t = assessPerformance_proba(estimator, X[train_index], 
+        tprs_t, aucs_t = assessPerformance_proba(estimator, Xtr, 
                                               y[train_index], fold, tprs_t, 
                                               aucs_t)[:2]
     aucs.sort()
@@ -562,30 +566,168 @@ def plotFeatureImportance(model, X_train_fold, y_train_fold, nr_features, ngrams
               ' features with label', fontsize=20, fontweight='bold')
     return plt
 
-def plotLexicalDispersion(X_train_fold):
+def plotLexicalDispersion(X, nr_features=20, n_grams=1):
     """
     Draws a lexical dispersion plot which visualizes 
     the homogeneity across the corpus. 
     
     Also confirms wheter or not the data is randomized, 
     and visualizes the prevalence of features.
+    
+    Input:
+        X = array with text data (EHR entries)
+        nr_features = top n number of features to plot
+        n_grams = chunksize for text processing :
+            Note: chunksize refers to nr of words / not nr of 
+                characters!
     """
     count = 0
     d = {}
     words = []
-    for x in X_train_fold:
-        words.append([i for i in x.split(' ')])
+    for x in X:
+        if n_grams != 1:
+            l = [i for i in x.split(' ')]
+            words.append([' '.join(l[i: i+(n_grams)]) for i in range(len(l)) if len(l[i: i+(n_grams)]) >= n_grams])
+        else :
+            words.append([i for i in x.split(' ')])
         count+=1
     d = np.array(words)
-    count_vect = TfidfVectorizer()
-    X_train_tfidf = count_vect.fit_transform(X_train_fold) 
+    count_vect = TfidfVectorizer(ngram_range=(n_grams, n_grams))
+    X_train_tfidf = count_vect.fit_transform(X) 
     X_pd = pd.DataFrame(X_train_tfidf.toarray(), columns=count_vect.get_feature_names())
-    feature_to_plot =list(X_pd.sum().sort_values(ascending=False).keys()[:20]) 
+    feature_to_plot =list(X_pd.sum().sort_values(ascending=False).keys()[:nr_features]) 
     visualizer = DispersionPlot(feature_to_plot, size=(450, 450))
     ax = visualizer.ax
     ax.tick_params(labelsize=18)
     visualizer.fit(d)
     visualizer.poof()
+    return
+
+def plotSampleDistribution(X, nr_features=50):
+    """
+    Draws a distribution of the top N words of any set
+    """
+    words_to_count = [word.split(' ') for word in X]
+    words_to_count = [item for entry in words_to_count for item in entry]
+    counts = Counter(words_to_count) 
+
+    labels =[ counts.most_common(nr_features)[x][0] for x in range(nr_features) ]
+    values= [ counts.most_common(nr_features)[x][1] for x in range(nr_features) ]
+
+    df = pd.DataFrame({'section':labels, 'frequency':values})
+    ax = df.plot(kind='bar',  title ="Prevalence of Features", figsize=(16, 6), x='section', legend=True, fontsize=12, rot=90)
+    plt.savefig('figures/feature_plot/top' + str(nr_features) + '_features_dist.png', bbox_inches='tight')
+    return plt
+
+def plotTrainTestDistribution(X_train, X_test, nr_features=50):
+    """
+    Draws a distribution of the top N words to assess 
+    wheter the trainings/ test set are comparable!
+    
+    Input:
+    X_train = trainingsset
+    X_test = testset
+    """
+    words_to_count = [word.split(' ') for word in X_train]
+    words_to_count = [item for entry in words_to_count for item in entry] # flatten
+    counts_train = Counter(words_to_count) 
+    
+    train_labels =[ counts_train.most_common(nr_features)[x][0] for x in range(nr_features) ]
+    train_values= [ counts_train.most_common(nr_features)[x][1] for x in range(nr_features) ]
+    
+    test_values = []
+    
+    words_to_count_test = [word.split(' ') for word in X_test]
+    words_to_count_test = [item for entry in words_to_count_test for item in entry] # flatten
+    counts_test = Counter(words_to_count_test) 
+    
+    for x in train_labels:
+        test_values.append(counts_test.get(x))
+    
+    fig, ax = plt.subplots(figsize=(16,8))
+    
+    p1 = ax.bar([x + 0.2 for x in range(nr_features)], train_values, width=0.4, color='g', align='center')
+    p2 = ax.bar([x - 0.2 for x in range(nr_features)], test_values, width=0.4, color='b', align='center')
+    p3 = ax.bar(train_labels, [x - 0.2 for x in range(nr_features)], alpha=0, width=0.4, color='b', align='center')
+    ax.legend((p1[0], p2[0]), ('Train', 'Test'))
+    
+    plt.xticks(rotation='vertical')
+    plt.show()
+    return
+
+def exportTreeGraphViz(X, model, lbls, title, n_grams=1):
+    """
+    Write the structure of the estimator to a .dot file. 
+    This tree can be visualized in http://viz-js.com/
+    
+    Input:
+    X = array with text data (EHR entries)
+    nr_features = top n number of features to plot
+    n_grams = chunksize for text processing :
+            Note: chunksize refers to nr of words / not nr of 
+                characters!
+    lbls = list of feature names
+    model = tree-like classification model 
+        Note: Decision Tree or subtree from Random Forest or
+            Gradient Boosting
+    """
+    count_vect = TfidfVectorizer(ngram_range=(n_grams, n_grams))
+    X_train_tfidf = count_vect.fit_transform(X) 
+    dot_data = tree.export_graphviz(model,
+                feature_names= lbls, 
+                class_names=['POSITIVE', 'NEGATIVE'],  
+                filled=True, rounded=True, special_characters=True,
+                proportion=True) 
+    f = open("GraphViz/" + str(title) + ".dot", "w")
+    f.write(dot_data)
+    f.close()
+    return
+
+def plotPrecisionRecall(clf, X, y_b, positive_prev=.25):
+    """
+    Draws a precision & recall curve 
+    
+    Input: 
+        X = array with text data (EHR entries)
+        y_b = array with corresponding labels (binarized to True/False)
+        positive_prev = fraction of desired RA-cases
+        clf = classifier object (Pipeline)
+        
+    Output:
+        plt = precision & Recall plot
+    """
+    l_folds = preset_CV10Folds(X)
+    mean_prec = []
+    for train_ix, test_ix in l_folds:
+        y_test = y_b[test_ix]
+        df = pd.DataFrame(data={'IX': test_ix, 'Outcome': y_test, 
+                                'XANTWOORD' : X[test_ix]})
+        y_pos = df[df['Outcome']==1].sample(frac=positive_prev, random_state=SEED)
+        if round(len(df[df['Outcome']==1])-len(df[df['Outcome']==0])) < 0:
+            y_neg = df[df['Outcome']==0].sample(n= len(df[df['Outcome']==0]) + 
+                      round(len(df[df['Outcome']==1])-len(df[df['Outcome']==0])), random_state=SEED)
+        else :
+            y_neg = df[df['Outcome']==0].sample(n= len(df[df['Outcome']==0]), random_state=SEED)
+        df_sub = pd.concat([y_pos, y_neg])
+        df_sub = df_sub.sample(frac=1, random_state=SEED) # shuffle
+        estimator = clf.fit(X[train_ix], y_b[train_ix])
+        probas_ = estimator.predict_proba(df_sub['XANTWOORD'])
+        precision, recall, thresholds = precision_recall_curve(df_sub['Outcome'], probas_[:, 1])
+        mean_prec.append(average_precision_score(df_sub['Outcome'], probas_[:, 1]))
+        step_kwargs = ({'step': 'post'}
+                       if 'step' in signature(plt.fill_between).parameters
+                       else {})
+        plt.step(recall, precision, color='b', alpha=0.2,
+                 where='post')
+        plt.fill_between(recall, precision, alpha=0.2, color='b', **step_kwargs)
+    plt.rcParams.update({'font.size': 25})
+    plt.xlabel('Recall')
+    plt.ylabel('Precision')
+    plt.ylim([0.0, 1.05])
+    plt.xlim([0.0, 1.0])
+    plt.title('2-class Precision-Recall curve: AP={0:0.2f}'.format(
+              float(sum(mean_prec)/ len(mean_prec))))
+    plt.legend()
     return
 
 def plot_learning_curve(estimator, title, X, y, ylim=None, cv=None,
