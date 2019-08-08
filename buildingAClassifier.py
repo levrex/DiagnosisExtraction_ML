@@ -49,14 +49,31 @@ class CustomBinaryModel(object):
 def lemmatizingText(sentence):
     """
     This function normalizes words with the pattern.nl package. 
-    Lemmatisation returns words to the base form.
+    Lemmatisation returns words to the base form. The base form
+    should be a valid word in the language.
 
     Example: Walking, Walks and Walked are all translated to 
         Walk
+        
+    Input: 
+        sentence = written text from an EHR record or another
+            Natural Language type record (str)
     """
     return ' '.join(patNL.Sentence(patNL.parse(sentence, lemmata=True)).lemmata)
 
 def stemmingText(sentence):
+    """
+    This function normalizes words with the kps package. 
+    Stemming returns words to the base form. The base form
+    is not required to be a valid word!
+    
+    Example: Troubling, Troubled and Trouble are all translated to 
+        Troubl
+    
+    Input: 
+        sentence = written text from an EHR record or another
+            Natural Language type record (str)
+    """
     return ' '.join([kps.stem(x) for x in sentence.split(' ')])
 
 def simpleCleaning(sentence, lemma=False): # Keep in mind: this function removes numbers
@@ -181,13 +198,17 @@ def assessPerformance_proba(estimator, X_test, y_test, fold, tprs, aucs, d_aucs=
 
 def optimalCutoff(pred, true, lbl, plot=False):
     """
-    Input:
-    true = true label
-    pred = prediction of classifier
-    
-    Description:
     Determine the optimal cutoff / threshold for classification.
     The optimal cut-off is the balance between sensitivity and specificity
+    
+    Input:
+        true = true label
+        pred = prediction of classifier
+        plot = draw the sensitivity / specificity plot ->
+            whereby the cut-off is visualized as the intersection 
+            between the two lines
+    Output:
+        cutoff = optimal cut-off (float)
     """
     fpr, tpr, thresholds = metrics.roc_curve(true, pred)
     i = np.arange(len(tpr)) # index for df
@@ -207,8 +228,36 @@ def optimalCutoff(pred, true, lbl, plot=False):
 
 def plotFolds(clf, X, y, l_folds, color, lbl):
     """
-    y_train should be binarized
+    Calculates the sensitivity and auc for the provided 
+    classifier (clf) for every fold in the k-fold validation. 
+    The average auc is determined for both the trainingsset & the 
+    testset.
+    
+    K-fold crossvalidation is utilized to give a higher resolution
+    of the performance of the classifier.
+    
+    The median model (with the median AUC) will be used to 
+    calculate the optimal cut-off & will be returned as 
+    output.
+    
+    Input: 
+        X = array with text data (EHR entries)
+        y = array with corresponding labels (binarized to 1/0)
+        l_folds = array of k-folds 
+        clf = classifier object (Pipeline)
+        color = color to represent classifier in the plot 
+        lbl = name of classifier
+    
+    Output:
+        plt = matplotlib pyplot featuring the Precision Recall curve
+            of one classifier
+        mean_auc = float of mean auc
+        aucs = array of auc scores (used to assess medianModel)
+        medianModel = median iteration of the classifier ->
+            the median iteration is chosen because the validation is
+            done k-times with a different train/test set each time. 
     """
+    
     tprs, aucs = [], []
     tprs_t, aucs_t = [], []
     d_aucs = {}
