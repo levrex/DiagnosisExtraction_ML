@@ -5,3 +5,5 @@ numpy==1.14.3
 matplotlib==2.2.2
 pattern==3.6
 yellowbrick==0.9.1
+kpss-py3==0.1
+xgboost==0.90

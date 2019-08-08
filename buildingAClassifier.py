@@ -5,7 +5,9 @@ Created on Thu Jun 27 10:17:52 2019
 @author: tdmaarseveen
 """
 import collections
+from collections import Counter
 from inspect import signature
+import kpss_py3 as kps
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -14,9 +16,11 @@ import re
 from scipy import stats, interp
 from sklearn.model_selection import learning_curve, ShuffleSplit
 from sklearn import metrics # 
-from sklearn.metrics import confusion_matrix, precision_recall_curve, average_precision_score
+from sklearn.metrics import confusion_matrix, precision_recall_curve
+from sklearn.pipeline import Pipeline
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn import tree
+from statistics import mean
 from yellowbrick.target import FeatureCorrelation
 from yellowbrick.features.importances import FeatureImportances
 from yellowbrick.text import DispersionPlot
@@ -52,8 +56,11 @@ def lemmatizingText(sentence):
     """
     return ' '.join(patNL.Sentence(patNL.parse(sentence, lemmata=True)).lemmata)
 
+def stemmingText(sentence):
+    return ' '.join([kps.stem(x) for x in sentence.split(' ')])
+
 def simpleCleaning(sentence, lemma=False): # Keep in mind: this function removes numbers
-    sticky_chars = r'([!#?,.:";@\-\+\\/&=$\]\[<>\'^\*`â€™\(\)\d])'
+    sticky_chars = r'([!#,.:";@\-\+\\/&=$\]\[<>\'^\*`â€™\(\)\d])'
     sentence = re.sub(sticky_chars, r' ', sentence)
     sentence = sentence.lower()
     if (lemma):
@@ -64,6 +71,12 @@ def simpleCleaning(sentence, lemma=False): # Keep in mind: this function removes
 def processArtefactsXML(entry):
     """
     Apply this function if your data contains XML artefacts 
+    
+    Input : 
+        entry - Free written text entry from Electronic Health
+            record (EHR)
+    Output:
+        entry - processed text field
     """
     correction_map ={'ã«' : 'e', 'ã¨' : 'e', 'ã¶': 'o', '\r' : ' ', '\n' : ' ', '\t': ' ', '·' : ' ', 
                      'ã©' : 'e', 'ã¯' : 'i', 'ãº':'u', 'ã³' : 'o', '\xa0' : ' '}
@@ -88,6 +101,10 @@ def score_binary(CL, inclFirst = True ):
     return TPR, FPR
 
 def binarize(value):
+    """
+    This function codifies the binary labels 'y' and 'n'
+     to 1 and 0.
+    """
     return int(value == 'y')
 
 def func(value):
@@ -196,8 +213,6 @@ def plotFolds(clf, X, y, l_folds, color, lbl):
     tprs_t, aucs_t = [], []
     d_aucs = {}
     for train_index, test_index in l_folds:
-        #print(train_index, test_index)
-        
         fold = [test_index, train_index]
         Xtr, Xte = X[train_index], X[test_index]
         
@@ -210,9 +225,7 @@ def plotFolds(clf, X, y, l_folds, color, lbl):
                                               aucs_t)[:2]
     aucs.sort()
     middleIndex = round((len(aucs) - 1)/2) # normally 5 -> if 10 fold
-    #print(lbl + ': ' + str(aucs[middleIndex]))
     medianModel = d_aucs[aucs[middleIndex]]
-    #plt = classifyOnLowerPrevalence(clf, medianModel, X_train, y_train, .2)
     foldTrueLbl = y[medianModel[3]]
     writePredictionsToFile(lbl, medianModel[0], foldTrueLbl)
     cut_off = optimalCutoff(medianModel[0], foldTrueLbl, lbl, False)
@@ -281,8 +294,6 @@ def plotSTD(tprs, aucs, color, lbl, linestyle='-', lw=5, vis=1):
         lbl = classifier
         vis = visualize
     """
-    #print(medianModel)
-    #print(medianModel[3])
     mean_fpr = np.linspace(0, 1, 100)
     mean_tpr = np.mean(tprs, axis=0)
     mean_tpr [-1] = 1.0
@@ -343,7 +354,8 @@ def assessPerformance(estimator, X_test, y_test, fold, tprs, aucs, d_aucs={}):
 
 def plotBinaryROC(clf, lbl, X, y, l_folds, color):
     """
-    Plot pseudo AUC for models that don't predict a probability
+    Plot pseudo AUC for models that don't predict a probability but
+    rather give a binary output (1 or 0)
     """
     l_folds = preset_CV10Folds(X)
     tprs, aucs = [], []
@@ -414,25 +426,43 @@ def holdOutSplitPerformance(clf, lbl, X, y):
     
 def plotCrossValidationROC(models, title, lbls, X, y, l_folds, ref_auc):
     """ 
-    models = list of Pipelines (sklearn)
+    This function calculates a ROC curve for every provided classifier.
+    The performance is calculated by taking the mean sensitivity & 
+    false positive rate of a k-fold crossvalidation.  
+    
+    Input:
+        medianModel = median iteration of the classifier ->
+            the median iteration is chosen because the validation is
+            done k-times with a different train/test set each time. 
+        title = title for the plot
+        X = array with text data (EHR entries)
+        y = array with annotated labels associated with text data
+        l_folds = list of different folds for crossvalidation
+            where there is no overlap between train & test
+        models = list of classifier (sklearn.pipeline.Pipelines)
+        
+    Output:
+        plt = matplotlib pyplot featuring multiple ROC-curves
+            for every classifier provided
+        fitted_models = list of fitted models (the median model)
+        d_aucs = dictionary with all characteristics of the median 
+            iteration of the fitted models where the following items
+            are stored for each classifier:
+                1. predictions
+                2. interpolated true positive rate
+                3. fitted classifier
+                4. test index of k-fold
+                5. train index of k-fold    
     """
-    colors = ['c', 'b', 'g', 'magenta', 'indigo', 'black']
+    colors = ['c', 'b', 'g', 'magenta', 'indigo', 'orange', 'black']
     d_aucs = {}
     fitted_models = {}
     for x in range(len(models)):
-        
         l_folds = preset_CV10Folds(X)
-        
-        #holdOutSplitPerformance(models[x], lbls[x], X[train_index], 
-        #                        X[test_index], y[train_index], y[test_index])
-        
-        #plt.plot(fpr, tpr, colors[x], lw=lw, label = lbls[x] + ' (AUC = %0.2f' % (auc) + '; p = %s)' % (p_val[x]))
         plt, mean_auc, aucs, medianModel = plotFolds(models[x], X, 
                     np.array([binarize(val) for val in y]), l_folds, colors[x], lbls[x])
         d_aucs[lbls[x]] = aucs
         fitted_models[lbls[x]] = medianModel
-        #plotTrainSplit(models[x], X[medianModel[4]], np.array([binarize(val) for val in y[medianModel[4]]]), 
-        #              colors[x], lbls[x])
     plt.xlim([0, 1])
     plt.ylim([0, 1])
     plt.rcParams.update({'font.size': 12})
@@ -498,7 +528,9 @@ def plot_confusion_matrix(y_true, y_pred, classes,
 
 def plotFeatureCorrelation(X_train_fold, y_train_fold, nr_features, ngrams=None):
     """
-    Draw a pearson correlation plot for the top n features.
+    Draw a pearson correlation plot for the most occuring features.
+    (Warning: this does not necesssarily draw the features with the 
+      highest correlation!)
     
     Input:
         X_train_fold = trainingsset
@@ -507,6 +539,9 @@ def plotFeatureCorrelation(X_train_fold, y_train_fold, nr_features, ngrams=None)
             (descending order)
         n_grams = chunk text on n_grams / motifs rather than
             on whitespace
+    Output:
+        plt = matplotlib pyplot showcasing the correlation for
+            each of the most occurring features
     """
     if ngrams != None:
         count_vect = TfidfVectorizer(ngram_range=(ngrams, ngrams))
@@ -516,17 +551,15 @@ def plotFeatureCorrelation(X_train_fold, y_train_fold, nr_features, ngrams=None)
     plt.figure(figsize=(8,6))
     X_pd = pd.DataFrame(X_train_tfidf.toarray(), columns=count_vect.get_feature_names())
     feature_to_plot =list(X_pd.sum().sort_values(ascending=False).keys()[:nr_features])
-    
     visualizer = FeatureCorrelation(labels=feature_to_plot, size=(750, 750), sort=True)
     visualizer.fit(X_pd[feature_to_plot], pd.Series(y_train_fold))
     ax = visualizer.ax
     ax.set_xlabel('Pearson Correlation', fontsize=18)
     ax.tick_params(labelsize=16)
     visualizer.finalize()
-    
     plt.rcParams.update({'font.size': 55})
     plt.title('Pearson Correlation of top ' + str(nr_features) + 
-              ' features with label', fontsize=20, fontweight='bold')
+              ' features', fontsize=20, fontweight='bold')
     return plt
 
 def plotFeatureImportance(model, X_train_fold, y_train_fold, nr_features, ngrams=None):
@@ -536,6 +569,11 @@ def plotFeatureImportance(model, X_train_fold, y_train_fold, nr_features, ngrams
     Feature importance is calculated with the leave-one-out method
     to assess the explained variance of said feature.
     
+    In order to assess the most important features, the feature importance
+    is calculated for every feature in the text. This isn't 
+    visually pleasing however. Therefore we only draw the top n features
+    (nr_features).
+    
     Input:
         X_train_fold = trainingsset
         y_train_fold = labels of the trainingsset
@@ -543,27 +581,35 @@ def plotFeatureImportance(model, X_train_fold, y_train_fold, nr_features, ngrams
             (descending order)
         n_grams = chunk text on n_grams / motifs rather than
             on whitespace
+            
+    Output:
+        plt = matplotlib pyplot showcasing the most important features for 
+            the classifier
     """
     if ngrams != None:
         count_vect = TfidfVectorizer(ngram_range=(ngrams, ngrams))
     else :
         count_vect = TfidfVectorizer()
     X_train_tfidf = count_vect.fit_transform(X_train_fold) 
+    X_pd = pd.DataFrame(X_train_tfidf.toarray(), columns=count_vect.get_feature_names()) 
+    feature_to_plot =list(X_pd.sum().sort_values(ascending=False).keys())
+    fig = plt.figure(figsize=(10, 10))
+    viz = FeatureImportances(model, labels=feature_to_plot, relative=False, absolute=True)
+    viz.fit(X_pd[feature_to_plot], pd.Series(y_train_fold))
+    plt.close(fig)
+    top_n_features = list(viz.features_)[-nr_features:] # nr_features
     plt.figure(figsize=(8,6))
-    X_pd = pd.DataFrame(X_train_tfidf.toarray(), columns=count_vect.get_feature_names())
-    feature_to_plot =list(X_pd.sum().sort_values(ascending=False).keys()[:nr_features])
-    
-    visualizer = FeatureImportances(model, labels=feature_to_plot, 
-                                    size=(750, 750), relative=False)
-    visualizer.fit(X_pd[feature_to_plot], pd.Series(y_train_fold))
+    visualizer = FeatureImportances(model, labels=top_n_features,  # feature_to_plot
+                                    size=(750, 750), relative=False, absolute=True)
+    visualizer.fit(X_pd[top_n_features], pd.Series(y_train_fold))
+    print(visualizer.feature_importances_)
     ax = visualizer.ax
     ax.set_xlabel('Feature Importance', fontsize=18)
     ax.tick_params(labelsize=16)
     visualizer.finalize()
-    
     plt.rcParams.update({'font.size': 55})
     plt.title('Feature Importance of top ' + str(nr_features) + 
-              ' features with label', fontsize=20, fontweight='bold')
+              ' features', fontsize=20, fontweight='bold')
     return plt
 
 def plotLexicalDispersion(X, nr_features=20, n_grams=1):
@@ -625,8 +671,11 @@ def plotTrainTestDistribution(X_train, X_test, nr_features=50):
     wheter the trainings/ test set are comparable!
     
     Input:
-    X_train = trainingsset
-    X_test = testset
+        X_train = trainingsset
+        X_test = testset
+        nr_features = specify the nr of features to plot
+    Output:
+        plt = matplotlib.pyplot of the top n features
     """
     words_to_count = [word.split(' ') for word in X_train]
     words_to_count = [item for entry in words_to_count for item in entry] # flatten
@@ -661,15 +710,15 @@ def exportTreeGraphViz(X, model, lbls, title, n_grams=1):
     This tree can be visualized in http://viz-js.com/
     
     Input:
-    X = array with text data (EHR entries)
-    nr_features = top n number of features to plot
-    n_grams = chunksize for text processing :
-            Note: chunksize refers to nr of words / not nr of 
-                characters!
-    lbls = list of feature names
-    model = tree-like classification model 
-        Note: Decision Tree or subtree from Random Forest or
-            Gradient Boosting
+        X = array with text data (EHR entries)
+        nr_features = top n number of features to plot
+        n_grams = chunksize for text processing :
+                Note: chunksize refers to nr of words / not nr of 
+                    characters!
+        lbls = list of feature names
+        model = tree-like classification model 
+            Note: Decision Tree or subtree from Random Forest or
+                Gradient Boosting
     """
     count_vect = TfidfVectorizer(ngram_range=(n_grams, n_grams))
     X_train_tfidf = count_vect.fit_transform(X) 
@@ -683,52 +732,115 @@ def exportTreeGraphViz(X, model, lbls, title, n_grams=1):
     f.close()
     return
 
-def plotPrecisionRecall(clf, X, y_b, positive_prev=.25):
+def plotCrossValidationPR(models, X, y, l_folds, title, lbls, c, prev):
+    """ 
+    This function checks wheter the provided input consists of one or 
+    more classifiers (models). After assessing the nr. of classifiers
+    a PR-curve is calculated for every provided classifier. 
+    
+    Input:
+        X = array with text data (EHR entries) from either 
+            the train/test set. 
+        y = array with corresponding labels (binarized to 1/0)
+        title = title of the plot
+        l_folds = list of different folds for crossvalidation
+            where there is no overlap between train & test
+        models = list of classifiers (sklearn Pipelines) or 
+            just one classifier
+        c = list of colors (or one color)
+        prev = desired prevalence of positive cases
+        
+    Output:
+        plt = matplotlib pyplot featuring multiple PR-curves
+            for every classifier provided
     """
-    Draws a precision & recall curve 
+    if type(models) == Pipeline: 
+        # only one classifier
+        plt = calculatePrecisionRecall(models, X, y, c, lbls, prev)
+    else :
+        for x in range(len(models)):
+            plt = calculatePrecisionRecall(models[x], X, y, c[x], lbls[x], prev)
+    plt.xlim([0, 1])
+    plt.ylim([0, 1])
+    plt.rcParams.update({'font.size': 12})
+    plt.legend(loc = 'lower right')
+    plt.rcParams.update({'font.size': 55})
+    plt.xlabel('Recall')
+    plt.ylabel('Precision')
+    plt.title(title)
+    plt.legend()
+    return plt
+
+def calculatePrecisionRecall(clf, X, y_b, color, lbl, positive_prev=.25):
+    """
+    Calculates the precision and recall for the provided 
+    classifier (clf). 
     
     Input: 
         X = array with text data (EHR entries)
-        y_b = array with corresponding labels (binarized to True/False)
-        positive_prev = fraction of desired RA-cases
+        y_b = array with corresponding labels (binarized to 1/0)
+        positive_prev = fraction of the desired RA-cases
         clf = classifier object (Pipeline)
-        
+        color = color to represent classifier in the plot 
+    
     Output:
-        plt = precision & Recall plot
+        plt = matplotlib pyplot featuring the Precision Recall curve
+            of one classifier
     """
     l_folds = preset_CV10Folds(X)
-    mean_prec = []
+    l_prec, aucs = [], []
+    recall_scale = np.linspace(0, 1, 100)
     for train_ix, test_ix in l_folds:
         y_test = y_b[test_ix]
         df = pd.DataFrame(data={'IX': test_ix, 'Outcome': y_test, 
                                 'XANTWOORD' : X[test_ix]})
-        y_pos = df[df['Outcome']==1].sample(frac=positive_prev, random_state=SEED)
-        if round(len(df[df['Outcome']==1])-len(df[df['Outcome']==0])) < 0:
-            y_neg = df[df['Outcome']==0].sample(n= len(df[df['Outcome']==0]) + 
-                      round(len(df[df['Outcome']==1])-len(df[df['Outcome']==0])), random_state=SEED)
-        else :
-            y_neg = df[df['Outcome']==0].sample(n= len(df[df['Outcome']==0]), random_state=SEED)
+        y_pos = df[df['Outcome']==1].sample(n=int(len(df[df['Outcome']==0])*positive_prev), random_state=SEED)
+        y_neg = df[df['Outcome']==0].sample(n=int(len(df[df['Outcome']==0])*(1-positive_prev)), random_state=SEED)
         df_sub = pd.concat([y_pos, y_neg])
         df_sub = df_sub.sample(frac=1, random_state=SEED) # shuffle
         estimator = clf.fit(X[train_ix], y_b[train_ix])
         probas_ = estimator.predict_proba(df_sub['XANTWOORD'])
         precision, recall, thresholds = precision_recall_curve(df_sub['Outcome'], probas_[:, 1])
-        mean_prec.append(average_precision_score(df_sub['Outcome'], probas_[:, 1]))
-        step_kwargs = ({'step': 'post'}
-                       if 'step' in signature(plt.fill_between).parameters
-                       else {})
-        plt.step(recall, precision, color='b', alpha=0.2,
-                 where='post')
-        plt.fill_between(recall, precision, alpha=0.2, color='b', **step_kwargs)
-    plt.rcParams.update({'font.size': 25})
-    plt.xlabel('Recall')
-    plt.ylabel('Precision')
-    plt.ylim([0.0, 1.05])
-    plt.xlim([0.0, 1.0])
-    plt.title('2-class Precision-Recall curve: AP={0:0.2f}'.format(
-              float(sum(mean_prec)/ len(mean_prec))))
-    plt.legend()
-    return
+        aucs.append(metrics.auc(recall, precision))
+        l_prec.append(interp(recall_scale, precision, recall))
+    plt = plotPR(l_prec, aucs, color, lbl)
+    return plt
+
+def plotPR(l_prec, aucs, color, lbl, linestyle='-', lw=5):
+    """
+    Plot the precision recall curve by taking the
+    mean of the k-folds. The standard deviation is also
+    calculated and plotted on the screen.
+    
+    Input:
+        l_prec = list of precision scores per iteration
+        l_rec = list of recall scores per iteration
+        aucs = list of area under the curve per iteration
+        color = color for line
+        lbl = name of classifier
+        linestyle = linestyle (matplotlib.pyplot)
+        lw = linewidth
+        
+    Output:
+        plt = Precision Recall curve with standard deviation 
+            (matplotlib.pyplot)
+    """
+    mean_precision = [*map(mean, zip(*l_prec))]
+    mean_precision[-1] = 0.0
+    recall_scale = np.linspace(0, 1, 100)
+    mean_auc = metrics.auc(mean_precision, recall_scale)
+    std_auc = np.std(aucs)
+    std_precision = np.std(mean_precision, axis=0)
+    precision_upper = np.minimum(mean_precision + std_precision, 1)
+    precision_lower = np.maximum(mean_precision - std_precision, 0)
+
+    plt.fill_between(recall_scale, precision_lower, precision_upper, color=color, alpha=.1)
+    plt.step(recall_scale, mean_precision, color=color, alpha=0.6, 
+             label=lbl + r' mean kfold (AUC = %0.2f $\pm$ %s)' % (mean_auc, std_auc),
+             linestyle=linestyle, linewidth=lw,
+             where='post')
+    print(lbl + ' ' + str(mean_auc) +' (std : +/-' + str(std_auc) + ' )')
+    return plt
 
 def plot_learning_curve(estimator, title, X, y, ylim=None, cv=None,
                         n_jobs=None, train_sizes=np.linspace(.1, 1.0, 5)):
