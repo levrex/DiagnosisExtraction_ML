@@ -51,7 +51,7 @@ class TypoCorrection(object):
         self.dictionary = vocab
         self.thresh = thresh
         
-    def correct(self, sentence, thresh=0.20):
+    def correct(self, sentence):
         """
         Corrects the sentence by applying a normalized
         Damerau Levenshtein. It is important to normalize the text
