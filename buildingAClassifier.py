@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pattern.nl as patNL
+from pyxdameraulevenshtein import normalized_damerau_levenshtein_distance_ndarray
 import re
 from scipy import stats, interp
 from sklearn.model_selection import learning_curve, ShuffleSplit
@@ -21,6 +22,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn import tree
 from statistics import mean
+import unicodedata
 from yellowbrick.target import FeatureCorrelation
 from yellowbrick.features.importances import FeatureImportances
 from yellowbrick.text import DispersionPlot
@@ -29,7 +31,66 @@ from yellowbrick.text import DispersionPlot
 SEED = 26062019
 OUTPUT_PATH = r'output_files/'
 
+
+import numpy as np
+
+class TypoCorrection(object):
+    def __init__(self, vocab, thresh=0.20):
+        """
+        Initialize the object required for the typo correction.
+        D_fix keeps track of the changes made -> and speeds up 
+        the typo correction by looking back at the history.
+        
+        Input:
+            vocab = numpy array with words relevant to the data
+            thresh = threshold which indicates the difference 
+                between words in a range from 0 to 1 
+                (0=perfect match, 1=highly different)
+        """
+        self.d_fix = {}
+        self.dictionary = vocab
+        self.thresh = thresh
+        
+    def correct(self, sentence, thresh=0.20):
+        """
+        Corrects the sentence by applying a normalized
+        Damerau Levenshtein. It is important to normalize the text
+        because the word length should be taken into account!
+        
+        Input:
+            sentence = free written text to correct for typos
+                
+        Output:
+            new_sent = corrected free written text
+        """
+        new_sent = ''
+        for word in sentence.split() : 
+            if word in self.d_fix.keys(): 
+                new_sent += self.d_fix[word] + ' '
+            elif np.in1d(word, self.dictionary) == False:
+                arr = normalized_damerau_levenshtein_distance_ndarray(word, self.dictionary)
+                if np.amin(arr) <= self.thresh:
+                    result = np.where(arr == np.amin(arr))
+                    self.d_fix[word] = self.dictionary[result][0]
+                else :
+                    self.d_fix[word] = word
+                new_sent += self.d_fix[word] + ' '
+            else :
+                new_sent += word + ' '
+        return new_sent
+    
+    def getUniqueCorrections(self):
+        return self.d_fix
+
 class CustomBinaryModel(object):
+    """
+    Summary class:
+        Use this class to create a binary prediction model
+        that classifies entries according to the presence of
+        targets (words) in the free written text. The targets
+        can be provided during the creation of the object or 
+        by calling the setTargets function
+    """
     def __init__(self, targets):
         self.targets = targets
         
@@ -40,6 +101,10 @@ class CustomBinaryModel(object):
         return self.targets
     
     def predict(self, report):
+        """
+        Predict the class on the presence of certain words (targets)
+        in the free written text from EHR records
+        """
         regexp = re.compile(r'\b('+r'|'.join(self.targets)+r')\b')
         if regexp.search(report):
             return 'y'
@@ -77,6 +142,16 @@ def stemmingText(sentence):
     return ' '.join([kps.stem(x) for x in sentence.split(' ')])
 
 def simpleCleaning(sentence, lemma=False): # Keep in mind: this function removes numbers
+    """
+    Remove special characters that are not relevant to 
+    the interpretation of the text
+    
+    Input:
+        sentence = free written text from EHR record
+        lemma = lemmatize the text
+    Output :
+        processed sentence (lemmatized depending on preference)
+    """
     sticky_chars = r'([!#,.:";@\-\+\\/&=$\]\[<>\'^\*`â€™\(\)\d])'
     sentence = re.sub(sticky_chars, r' ', sentence)
     sentence = sentence.lower()
@@ -85,9 +160,25 @@ def simpleCleaning(sentence, lemma=False): # Keep in mind: this function removes
     else :
         return sentence
     
+def removeAccent(text):
+    """
+    This function removes the accent of characters from the text.
+
+    Variables:
+        text = text to be processed
+    """
+    try:
+        text = unicode(text, 'utf-8')
+    except NameError: # unicode is a default on python 3 
+        pass
+    text = unicodedata.normalize('NFD', text)
+    text = text.encode('ascii', 'ignore')
+    text = text.decode("utf-8")
+    return text
+    
 def processArtefactsXML(entry):
     """
-    Apply this function if your data contains XML artefacts 
+    Removes XML artefacts with a mapping function
     
     Input : 
         entry - Free written text entry from Electronic Health
@@ -101,13 +192,25 @@ def processArtefactsXML(entry):
         entry = entry.replace(char, correction_map[char])
     return entry
 
-def score_binary(CL, inclFirst = True ):
+def score_binary(CL):
+    """
+    Calculates the dummy true en false positive rate for 
+    a classifier that doesn't calculate probabilities 
+    
+    Input:
+        CL = list of true label sorted on the 
+            predictions label.
+            The function sortedPredictionList can
+            be used to generate such a list!
+    Output:
+        TPR = list with true positive rates 
+        FPR = list with false positive rates 
+    """
     dummi = CL
     dummi = [2 if x==0 else x for x in dummi]
     dummi = [x -1 for x in dummi]
-    if (inclFirst):
-        CL.insert(0,0)
-        dummi.insert(0,0)
+    CL.insert(0,0)
+    dummi.insert(0,0)
     # Compute basic statistics:
     TP = pd.Series(CL).cumsum()
     FP = pd.Series(dummi).cumsum()
@@ -128,6 +231,24 @@ def func(value):
     return value[1][0]
 
 def sortedPredictionList(pred, y_test):
+    """
+    This function sorts the list of true labels by the
+    list of predictions. The sorted list of true labels
+    can be used to create a ROC-curve for a non-probability
+    classifier (a.k.a. a binary classifier like decision tree). 
+    
+    Example for generating 'l_sorted_true':
+        Before sort:
+           pred: 0 1 1 0 1 0 1 0 1 1 1 0 1 0
+           true: 0 1 0 0 1 0 0 1 1 0 1 0 1 1
+        After sort:
+           pred: 1 1 1 1 1 1 1 1 0 0 0 0 0 0 
+        -> true: 1 1 0 1 0 0 1 1 0 0 1 1 0 0
+    
+    Output:
+        l_sorted_true = list of true label sorted on the 
+            predictions label:
+    """
     d_perf_dt = {}
     b_pred = []
     for x in pred:
@@ -148,6 +269,17 @@ def sortedPredictionList(pred, y_test):
     return l_sorted_true
 
 def preset_CV10Folds(X_s):
+    """
+    Split the provided dataset (X_s) randomly 10 times for k-fold
+    cross validation. 
+    
+    Input:
+        X_s = pandas Series object with free written text 
+            from different EHR entries. 
+    Output:
+        l_folds = list containing the indices for the train/test
+            entries, required to contstruct the k-folds.
+    """
     ss = ShuffleSplit(n_splits=10, test_size=0.5, random_state=SEED)
     l_folds = ss.split(X_s)
     return l_folds
@@ -156,6 +288,11 @@ def writePredictionsToFile(name, pred, true):
     """
     Write predictions of the classifier to a simple CSV file. 
     These files can be processed in pROC for the Delong test
+    
+    Input:
+        name = name of classifier
+        pred = list of predictions
+        true = list of true labels
     """
     d = {'PRED': pred, 'TRUE': true}
     df = pd.DataFrame(data=d)
@@ -164,25 +301,35 @@ def writePredictionsToFile(name, pred, true):
 
 def assessPerformance_proba(estimator, X_test, y_test, fold, tprs, aucs, d_aucs={}): 
     """
-    
     Calculates the true positive rate, the false positive rate and 
     the Area under the Curve for the Receiver Operator Curve (ROC)
     for the provided classifier (that calculates probabilities!)
     
-    tprs = list with true positive rates 
-    aucs = list with area under the curves
-    d_aucs = dictionary with the following attributes:
-        0. the predictions (proba), 
-        1. true positive rate
-        2. classifier (a.k.a. model)
-        3. test index  (of fold)
-        4. train index (of fold)
-    X_test = values of test set
-    y_test = actual label of the test set
+    Input:
+        estimator = classifier that returns probabilities as 
+            outcome
+        X_test = array with text data (EHR entries) from
+            testset
+        y_test = actual label of the test set
+        fold = list with k-fold information (required to reconstruct
+            the k-folds): 
+                0=train index
+                1=test index
+     Input/Output (updated):
+        tprs = list with true positive rates 
+        aucs = list with area under the curves
+        d_aucs = dictionary with the following attributes:
+            0. the predictions (proba), 
+            1. true positive rate
+            2. classifier (a.k.a. model)
+            3. test index  (of fold)
+            4. train index (of fold)
+    
+    Warning: If the classifier doesn't return probabilities than it 
+        is adviced to utilize the function assessPerformance()
     Disclaimer: you could also use this function to assess the auc 
         of the trainingsset in addition to the testset. If you are
         interested if the fitted model covers the whole trainingsset.
-        
     """
     fpr_scale = np.linspace(0, 1, 100)
     probas_ = estimator.predict_proba(X_test)
@@ -285,12 +432,25 @@ def plotFolds(clf, X, y, l_folds, color, lbl):
 
 def classifyOnLowerPrevalence(clf, X, y, positive_prev, lbl, color):
     """
-    Test the performance of the classifier on a unbalanced test set
+    This function calculates the ROC-curve AUC on lower prevalence
+    datasets. The ROC-AUC should NOT be affected by the different
+    prevalence of RA.
     
     Reminder - same K-folds as plotted in the ROC-curve
     
-    Variables:
+    Input:
+        clf = classifier (sklearn Pipeline object)
+        X = list of free written text fields from 
+            multiple EHR entries
+        y = list of annotated labels from multiple EHR 
+            entries
         positive_prev = prevalence of positive class (RA = True)
+        lbl = name of classifier (string)
+        color = specify color for the roc curve
+    Output:
+        plt = matplotlib pyplot featuring the Precision Recall curve
+            of one classifier
+        mean_auc = float of mean auc
     """
     fpr_scale = np.linspace(0, 1, 100)
     l_folds = preset_CV10Folds(X)
@@ -307,31 +467,18 @@ def classifyOnLowerPrevalence(clf, X, y, positive_prev, lbl, color):
         else :
             y_neg = df[df['Outcome']==0].sample(n= len(df[df['Outcome']==0]), random_state=SEED)
         df_sub = pd.concat([y_pos, y_neg])
-        #print(df_sub.index)
-        #print(df_sub['Outcome'].value_counts()) # -> verify if it works
         df_sub = df_sub.sample(frac=1, random_state=SEED) # shuffle
         estimator = clf.fit(X[train_ix], y[train_ix])
         probas_ = estimator.predict_proba(df_sub['XANTWOORD'])
-        #print(probas_[:,1])
         fpr, tpr, thresholds = metrics.roc_curve(df_sub['Outcome'], probas_[:, 1])
         tprs.append(interp(fpr_scale, fpr, tpr))
         tprs[-1][0] = 0.0
         roc_auc = metrics.auc(fpr, tpr)
         aucs.append(roc_auc)
-    #print(df_sub['Outcome'].value_counts()) 
     plt, mean_auc = plotSTD(tprs, aucs, color, lbl)
     plt.rcParams.update({'font.size': 20})
     plt.legend()
     return plt, mean_auc
-
-def AUCtoCI(auc, std_auc, alpha=.95):
-    lower_upper_q = np.abs(np.array([0, 1]) - (1 - alpha) / 2)
-    ci = stats.norm.ppf(
-        lower_upper_q,
-        loc=auc,
-        scale=std_auc)
-    ci[ci > 1] = 1
-    return ci 
 
 def plotSTD(tprs, aucs, color, lbl, linestyle='-', lw=5, vis=1):
     """
@@ -340,8 +487,15 @@ def plotSTD(tprs, aucs, color, lbl, linestyle='-', lw=5, vis=1):
     Input:
         tprs = list of true positive rates per iteration
         aucs = list of area under the curve per iteration
-        lbl = classifier
+        lbl = name of the classifier (string)
+        color = specify color of the classifier
+        lw = linewidth (float)
         vis = visualize
+        
+    Output:
+        plt = matplotlib pyplot featuring the standard 
+            deviation of the ROC curve from the classifier
+        std_auc = standard deviation of the auc (float)
     """
     mean_fpr = np.linspace(0, 1, 100)
     mean_tpr = np.mean(tprs, axis=0)
@@ -365,7 +519,9 @@ def plotSTD(tprs, aucs, color, lbl, linestyle='-', lw=5, vis=1):
 
 def plotTrainSplit(clf, X_train, y_train, color, lbl, lw=3):
     """
-    y_train should be binarized
+    [NOT CURRENTLY IMPLEMENTED]
+    
+    Plot the ROC curve during the training phase.
     """
     pred_t = clf.predict_proba(X_train)[:,1]
     fpr_t, tpr_t, threshold_t = metrics.roc_curve(y_train, list(pred_t), pos_label=1)
@@ -377,13 +533,26 @@ def assessPerformance(estimator, X_test, y_test, fold, tprs, aucs, d_aucs={}):
     """
     Calculates the true positive rate, the false positive rate and 
     the Area under the Curve for the Receiver Operator Curve (ROC) 
+    for a classifier that doesnt return probabilities but rather
+    hard predictions.
     
-    tprs = list with true positive rates 
-    aucs = list with area under the curves
-    d_aucs = dictionary with aucs/ tprs/ estimator and test/train fold 
-        for every iteration
-    X_test = values of test set
-    y_test = actual label of the test set
+    Input:
+        estimator = classifier (that doesnt return probabilities)
+        X_test = = array with text data (EHR entries) from
+            test set
+        y_test = actual label of the test set
+        fold = list with k-fold information (required to reconstruct the 
+            k-folds): 
+                0=train index
+                1=test index
+    Input/Output (updated):
+        tprs = list with true positive rates 
+        aucs = list with area under the curves
+        d_aucs = dictionary with aucs/ tprs/ estimator and test/train fold 
+            for every iteration
+        
+    Warning:  If the classifier does in fact return probabilities than it is
+        adviced to utilize the function assessPerformance_proba() instead
     Disclaimer: you could also use this function to assess the auc 
         of the trainingsset in addition to the testset. If you are
         interested if the fitted model covers the whole trainingsset.
@@ -404,7 +573,25 @@ def assessPerformance(estimator, X_test, y_test, fold, tprs, aucs, d_aucs={}):
 def plotBinaryROC(clf, lbl, X, y, l_folds, color):
     """
     Plot pseudo AUC for models that don't predict a probability but
-    rather give a binary output (1 or 0)
+    rather give a binary output a.k.a. 'hard' prediction (1 or 0)
+    
+    Input:
+        clf = classifier (sklearn Pipeline object)
+        lbl = name of classifier (string)
+        X = list of free written text fields from 
+            multiple EHR entries
+        y = list of annotated labels from multiple EHR 
+            entries
+        l_folds = list of different folds for crossvalidation
+            where there is no overlap between train & test
+        color = specify color for the roc curve
+    Output:
+        plt = matplotlib pyplot featuring the ROC curve of the
+            provided classifier (non-probabilities)
+        medianModel = fitted model from the median iteration 
+            (sorted on AUC)
+        mean_auc = mean AUC (float)
+        aucs = list of AUC per iteration/k-fold
     """
     l_folds = preset_CV10Folds(X)
     tprs, aucs = [], []
@@ -431,6 +618,29 @@ def plotBinaryROC(clf, lbl, X, y, l_folds, color):
     return plt, mean_auc, aucs, medianModel
 
 def plotCustomModelROC(clf, X, y, l_folds, lbl, color, linestyle='-'):
+    """
+    Plot pseudo AUC for custom models that predict the RA-diagnosis 
+    by looking at the presence of certain targets (words). 
+    This function expects the classifier to give binary outcomes
+    a.k.a. 'hard' prediction (1 or 0) rather than probabilities.
+    
+    Input:
+        clf = classifier (sklearn Pipeline object)
+        X = list of free written text fields from 
+            multiple EHR entries
+        y = list of annotated labels from multiple EHR 
+            entries
+        l_folds = list of different folds for crossvalidation
+            where there is no overlap between train & test
+        color = specify color for the roc curve
+    Output:
+        plt = matplotlib pyplot featuring the ROC curve of the
+            provided classifier (non-probabilities)
+        mean_auc = mean AUC (float)
+        medianModel = fitted model from the median iteration 
+            (sorted on AUC)
+        aucs = list of AUC per iteration/k-fold
+    """
     l_folds = preset_CV10Folds(X)
     tprs = []
     aucs = []
@@ -454,13 +664,24 @@ def plotCustomModelROC(clf, X, y, l_folds, lbl, color, linestyle='-'):
     aucs.sort()
     middleIndex = round((len(aucs) - 1)/2) # normally 5 -> if 10 fold
     medianModel = d_aucs[aucs[middleIndex]]
-    #print(lbl + ': ' + str(aucs[middleIndex]))
     foldTrueLbl = np.array([binarize(val) for val in y[medianModel[3]]])
     writePredictionsToFile(lbl, medianModel[0], foldTrueLbl)
     plt, mean_auc = plotSTD(tprs, aucs, color, lbl, linestyle)
     return plt, mean_auc, aucs, medianModel
     
 def holdOutSplitPerformance(clf, lbl, X, y):
+    """
+    Calculates the performance of the classifier by
+    performing 1 simple split rather than a k-fold split.
+    
+    Input:
+        clf = classifier (sklearn Pipeline object)
+        lbl = name of classifier
+        X = list of free written text fields from 
+            multiple EHR entries
+        y = list of annotated labels from multiple EHR 
+            entries
+    """
     ss = ShuffleSplit(n_splits=1, test_size=0.5, random_state=SEED)
     l_folds = ss.split(X)
     train_ix, test_ix = l_folds
@@ -582,7 +803,8 @@ def plotFeatureCorrelation(X_train_fold, y_train_fold, nr_features, ngrams=None)
       highest correlation!)
     
     Input:
-        X_train_fold = trainingsset
+        X_train_fold = array with text data (EHR entries) from
+            trainingsset
         y_train_fold = labels of the trainingsset
         nr_features = specifies the nr of features to draw 
             (descending order)
@@ -624,7 +846,8 @@ def plotFeatureImportance(model, X_train_fold, y_train_fold, nr_features, ngrams
     (nr_features).
     
     Input:
-        X_train_fold = trainingsset
+        X_train_fold = array with text data (EHR entries) from
+            trainingsset
         y_train_fold = labels of the trainingsset
         nr_features = specifies the nr of features to draw 
             (descending order)
@@ -700,7 +923,13 @@ def plotLexicalDispersion(X, nr_features=20, n_grams=1):
 
 def plotSampleDistribution(X, nr_features=50):
     """
-    Draws a distribution of the top N words of any set
+    Draws a distribution of the top N words of any set (barchart)
+    
+    Input:
+        X = array with text data (EHR entries)
+        nr_features = number of features to display
+    Output:
+        plt = matplotlib.pyplot of the top n features 
     """
     words_to_count = [word.split(' ') for word in X]
     words_to_count = [item for entry in words_to_count for item in entry]
@@ -720,8 +949,10 @@ def plotTrainTestDistribution(X_train, X_test, nr_features=50):
     wheter the trainings/ test set are comparable!
     
     Input:
-        X_train = trainingsset
-        X_test = testset
+        X_train = array with text data (EHR entries) from
+            trainingsset
+        X_test = array with text data (EHR entries) from
+            test set
         nr_features = specify the nr of features to plot
     Output:
         plt = matplotlib.pyplot of the top n features
@@ -889,88 +1120,4 @@ def plotPR(l_prec, aucs, color, lbl, linestyle='-', lw=5):
              linestyle=linestyle, linewidth=lw,
              where='post')
     print(lbl + ' ' + str(mean_auc) +' (std : +/-' + str(std_auc) + ' )')
-    return plt
-
-def plot_learning_curve(estimator, title, X, y, ylim=None, cv=None,
-                        n_jobs=None, train_sizes=np.linspace(.1, 1.0, 5)):
-    """
-    Generate a simple plot of the test and training learning curve.
-
-    Parameters
-    ----------
-    estimator : object type that implements the "fit" and "predict" methods
-        An object of that type which is cloned for each validation.
-
-    title : string
-        Title for the chart.
-
-    X : array-like, shape (n_samples, n_features)
-        Training vector, where n_samples is the number of samples and
-        n_features is the number of features.
-
-    y : array-like, shape (n_samples) or (n_samples, n_features), optional
-        Target relative to X for classification or regression;
-        None for unsupervised learning.
-
-    ylim : tuple, shape (ymin, ymax), optional
-        Defines minimum and maximum yvalues plotted.
-
-    cv : int, cross-validation generator or an iterable, optional
-        Determines the cross-validation splitting strategy.
-        Possible inputs for cv are:
-          - None, to use the default 3-fold cross-validation,
-          - integer, to specify the number of folds.
-          - :term:`CV splitter`,
-          - An iterable yielding (train, test) splits as arrays of indices.
-
-        For integer/None inputs, if ``y`` is binary or multiclass,
-        :class:`StratifiedKFold` used. If the estimator is not a classifier
-        or if ``y`` is neither binary nor multiclass, :class:`KFold` is used.
-
-        Refer :ref:`User Guide <cross_validation>` for the various
-        cross-validators that can be used here.
-
-    n_jobs : int or None, optional (default=None)
-        Number of jobs to run in parallel.
-        ``None`` means 1 unless in a :obj:`joblib.parallel_backend` context.
-        ``-1`` means using all processors. See :term:`Glossary <n_jobs>`
-        for more details.
-
-    train_sizes : array-like, shape (n_ticks,), dtype float or int
-        Relative or absolute numbers of training examples that will be used to
-        generate the learning curve. If the dtype is float, it is regarded as a
-        fraction of the maximum size of the training set (that is determined
-        by the selected validation method), i.e. it has to be within (0, 1].
-        Otherwise it is interpreted as absolute sizes of the training sets.
-        Note that for classification the number of samples usually have to
-        be big enough to contain at least one sample from each class.
-        (default: np.linspace(0.1, 1.0, 5))
-        
-    Code from sklearn tutorial 
-    """
-    plt.figure()
-    plt.title(title)
-    if ylim is not None:
-        plt.ylim(*ylim)
-    plt.xlabel("Training examples")
-    plt.ylabel("Score")
-    train_sizes, train_scores, test_scores = learning_curve(
-        estimator, X, y, cv=cv, n_jobs=n_jobs, train_sizes=train_sizes)
-    train_scores_mean = np.mean(train_scores, axis=1)
-    train_scores_std = np.std(train_scores, axis=1)
-    test_scores_mean = np.mean(test_scores, axis=1)
-    test_scores_std = np.std(test_scores, axis=1)
-    plt.grid()
-
-    plt.fill_between(train_sizes, train_scores_mean - train_scores_std,
-                     train_scores_mean + train_scores_std, alpha=0.1,
-                     color="r")
-    plt.fill_between(train_sizes, test_scores_mean - test_scores_std,
-                     test_scores_mean + test_scores_std, alpha=0.1, color="g")
-    plt.plot(train_sizes, train_scores_mean, 'o-', color="r",
-             label="Training score")
-    plt.plot(train_sizes, test_scores_mean, 'o-', color="g",
-             label="Cross-validation score")
-
-    plt.legend(loc="best")
     return plt

@@ -8,3 +8,4 @@ yellowbrick==0.9.1
 kpss-py3==0.1
 xgboost==0.90
 ipykernel==5.1.2
+pyxDamerauLevenshtein==1.5.3
