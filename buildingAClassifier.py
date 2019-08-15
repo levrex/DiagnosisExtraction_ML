@@ -26,7 +26,7 @@ import unicodedata
 from yellowbrick.target import FeatureCorrelation
 from yellowbrick.features.importances import FeatureImportances
 from yellowbrick.text import DispersionPlot
-
+from sklearn.feature_selection import chi2
 
 SEED = 26062019
 OUTPUT_PATH = r'output_files/'
@@ -796,11 +796,49 @@ def plot_confusion_matrix(y_true, y_pred, classes,
     fig.tight_layout()
     return ax
 
-def plotFeatureCorrelation(X_train_fold, y_train_fold, nr_features, ngrams=None):
+def plotFeatureChiSquared(X_train_fold, y_train_fold, nr_features, **kwargs):
+    """
+    Draw a chi squared plot for the top n features
+    
+    Input:
+        X_train_fold = array with text data (EHR entries) from
+            trainingsset
+        y_train_fold = labels of the trainingsset
+        nr_features = specifies the nr of features to draw 
+            (descending order)
+        n_grams = chunk text on n_grams / motifs rather than
+            on whitespace
+        kwargs = arguments for feature vectorizer (TfidfVectorizer):
+            ngram_range = specifies the range of the ngram features
+    Output:
+        plt = matplotlib pyplot showcasing the correlation for
+            each of the most occurring features
+    """
+    tvec = TfidfVectorizer(max_features=100000,ngram_range=(1, 3))
+    x_train_tfidf = tvec.fit_transform(X_train_fold)
+    chi2score = chi2(x_train_tfidf, y_train_fold)[0]
+    
+    plt.figure(figsize=(15,10))
+    wscores = zip(tvec.get_feature_names(), chi2score)
+    wchi2 = sorted(wscores, key=lambda x:x[1])
+    topchi2 = list(zip(*wchi2[-nr_features:]))
+    
+    x = range(len(topchi2[1]))
+    labels = topchi2[0]
+    plt.barh(x ,topchi2[1], align='center', alpha=0.2)
+    plt.plot(topchi2[1], x , '-o', markersize=5, alpha=0.8)
+    plt.yticks(x, labels, fontsize=18)
+    plt.xticks(fontsize=16)
+    plt.xlabel('$\chi^2$', fontsize=18)
+    plt.title('Chi-squared test of top ' + str(nr_features) + 
+                  ' features', fontsize=20, fontweight='bold')
+    return plt
+
+def plotFeatureCorrelation(X_train_fold, y_train_fold, nr_features,**kwargs):
     """
     Draw a pearson correlation plot for the most occuring features.
     (Warning: this does not necesssarily draw the features with the 
-      highest correlation!)
+      highest correlation like the FeatureImportance method!)
     
     Input:
         X_train_fold = array with text data (EHR entries) from
@@ -814,8 +852,8 @@ def plotFeatureCorrelation(X_train_fold, y_train_fold, nr_features, ngrams=None)
         plt = matplotlib pyplot showcasing the correlation for
             each of the most occurring features
     """
-    if ngrams != None:
-        count_vect = TfidfVectorizer(ngram_range=(ngrams, ngrams))
+    if 'ngram_range' in kwargs.keys():
+        count_vect = TfidfVectorizer(ngram_range=kwargs['ngram_range'])
     else :
         count_vect = TfidfVectorizer()
     X_train_tfidf = count_vect.fit_transform(X_train_fold) 
@@ -833,7 +871,7 @@ def plotFeatureCorrelation(X_train_fold, y_train_fold, nr_features, ngrams=None)
               ' features', fontsize=20, fontweight='bold')
     return plt
 
-def plotFeatureImportance(model, X_train_fold, y_train_fold, nr_features, ngrams=None):
+def plotFeatureImportance(model, X_train_fold, y_train_fold, nr_features, **kwargs):
     """
     Draw a feature importance plot for the top n features.
     
@@ -853,13 +891,15 @@ def plotFeatureImportance(model, X_train_fold, y_train_fold, nr_features, ngrams
             (descending order)
         n_grams = chunk text on n_grams / motifs rather than
             on whitespace
+        kwargs = arguments for feature vectorizer (TfidfVectorizer):
+            ngram_range = specifies the range of the ngram features
             
     Output:
         plt = matplotlib pyplot showcasing the most important features for 
             the classifier
     """
-    if ngrams != None:
-        count_vect = TfidfVectorizer(ngram_range=(ngrams, ngrams))
+    if 'ngram_range' in kwargs.keys():
+        count_vect = TfidfVectorizer(ngram_range=kwargs['ngram_range'])
     else :
         count_vect = TfidfVectorizer()
     X_train_tfidf = count_vect.fit_transform(X_train_fold) 
@@ -884,7 +924,7 @@ def plotFeatureImportance(model, X_train_fold, y_train_fold, nr_features, ngrams
               ' features', fontsize=20, fontweight='bold')
     return plt
 
-def plotLexicalDispersion(X, nr_features=20, n_grams=1):
+def plotLexicalDispersion(X, nr_features=20, **kwargs):
     """
     Draws a lexical dispersion plot which visualizes 
     the homogeneity across the corpus. 
@@ -898,19 +938,24 @@ def plotLexicalDispersion(X, nr_features=20, n_grams=1):
         n_grams = chunksize for text processing :
             Note: chunksize refers to nr of words / not nr of 
                 characters!
+        kwargs = arguments for feature vectorizer (TfidfVectorizer):
+            ngram_range = specifies the range of the ngram features
     """
     count = 0
     d = {}
     words = []
     for x in X:
-        if n_grams != 1:
+        if kwargs['ngram_range'][1] != 1:
             l = [i for i in x.split(' ')]
-            words.append([' '.join(l[i: i+(n_grams)]) for i in range(len(l)) if len(l[i: i+(n_grams)]) >= n_grams])
+            words.append([' '.join(l[i: i+(kwargs['ngram_range'][1])]) for i in range(len(l)) if len(l[i: i+(kwargs['ngram_range'][0])]) <= (kwargs['ngram_range'][1])])
+            if len(words[-1]) == 0:
+                del words[-1]
         else :
             words.append([i for i in x.split(' ')])
         count+=1
     d = np.array(words)
-    count_vect = TfidfVectorizer(ngram_range=(n_grams, n_grams))
+    count_vect = TfidfVectorizer(ngram_range=kwargs['ngram_range'])
+    
     X_train_tfidf = count_vect.fit_transform(X) 
     X_pd = pd.DataFrame(X_train_tfidf.toarray(), columns=count_vect.get_feature_names())
     feature_to_plot =list(X_pd.sum().sort_values(ascending=False).keys()[:nr_features]) 
@@ -984,7 +1029,7 @@ def plotTrainTestDistribution(X_train, X_test, nr_features=50):
     plt.show()
     return
 
-def exportTreeGraphViz(X, model, lbls, title, n_grams=1):
+def exportTreeGraphViz(X, model, lbls, title, **kwargs):
     """
     Write the structure of the estimator to a .dot file. 
     This tree can be visualized in http://viz-js.com/
@@ -1000,8 +1045,6 @@ def exportTreeGraphViz(X, model, lbls, title, n_grams=1):
             Note: Decision Tree or subtree from Random Forest or
                 Gradient Boosting
     """
-    count_vect = TfidfVectorizer(ngram_range=(n_grams, n_grams))
-    X_train_tfidf = count_vect.fit_transform(X) 
     dot_data = tree.export_graphviz(model,
                 feature_names= lbls, 
                 class_names=['POSITIVE', 'NEGATIVE'],  
@@ -1012,7 +1055,7 @@ def exportTreeGraphViz(X, model, lbls, title, n_grams=1):
     f.close()
     return
 
-def plotCrossValidationPR(models, X, y, l_folds, title, lbls, c, prev):
+def plotCrossValidationPR(models, X, y, l_folds, title, lbls, c, prev=None):
     """ 
     This function checks wheter the provided input consists of one or 
     more classifiers (models). After assessing the nr. of classifiers
@@ -1051,7 +1094,7 @@ def plotCrossValidationPR(models, X, y, l_folds, title, lbls, c, prev):
     plt.legend()
     return plt
 
-def calculatePrecisionRecall(clf, X, y_b, color, lbl, positive_prev=.25):
+def calculatePrecisionRecall(clf, X, y_b, color, lbl, positive_prev=None):
     """
     Calculates the precision and recall for the provided 
     classifier (clf). 
@@ -1074,9 +1117,12 @@ def calculatePrecisionRecall(clf, X, y_b, color, lbl, positive_prev=.25):
         y_test = y_b[test_ix]
         df = pd.DataFrame(data={'IX': test_ix, 'Outcome': y_test, 
                                 'XANTWOORD' : X[test_ix]})
-        y_pos = df[df['Outcome']==1].sample(n=int(len(df[df['Outcome']==0])*positive_prev), random_state=SEED)
-        y_neg = df[df['Outcome']==0].sample(n=int(len(df[df['Outcome']==0])*(1-positive_prev)), random_state=SEED)
-        df_sub = pd.concat([y_pos, y_neg])
+        if positive_prev != None:
+            y_pos = df[df['Outcome']==1].sample(n=int(len(df[df['Outcome']==0])*positive_prev), random_state=SEED)
+            y_neg = df[df['Outcome']==0].sample(n=int(len(df[df['Outcome']==0])*(1-positive_prev)), random_state=SEED)
+            df_sub = pd.concat([y_pos, y_neg])
+        else :
+            df_sub = df
         df_sub = df_sub.sample(frac=1, random_state=SEED) # shuffle
         estimator = clf.fit(X[train_ix], y_b[train_ix])
         probas_ = estimator.predict_proba(df_sub['XANTWOORD'])
