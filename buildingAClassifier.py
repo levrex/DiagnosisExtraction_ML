@@ -205,6 +205,7 @@ def score_binary(CL):
     Output:
         TPR = list with true positive rates 
         FPR = list with false positive rates 
+        PRC = list with precision (PPV)
     """
     dummi = CL
     dummi = [2 if x==0 else x for x in dummi]
@@ -218,7 +219,8 @@ def score_binary(CL):
     N = sum(dummi)
     TPR = TP.divide(P) # sensitivity / hit rate / recall
     FPR = FP.divide(N)  # fall-out
-    return TPR, FPR
+    PRC = TP.divide(TP + FP) # precision
+    return [TPR, FPR, PRC]
 
 def binarize(value):
     """
@@ -560,7 +562,8 @@ def assessPerformance(estimator, X_test, y_test, fold, tprs, aucs, d_aucs={}):
     fpr_scale = np.linspace(0, 1, 100)
     pred = estimator.predict(X_test)
     l_sorted_true = sortedPredictionList(pred, y_test)
-    tpr, fpr = score_binary(l_sorted_true)
+    scores = score_binary(l_sorted_true)
+    tpr, fpr = scores[0], scores[1]
     roc_auc = np.trapz(tpr,fpr)
     aucs.append(roc_auc)
     tprs.append(interp(fpr_scale, fpr, tpr))
@@ -651,7 +654,8 @@ def plotCustomModelROC(clf, X, y, l_folds, lbl, color, linestyle='-'):
         l_context= [clf.predict(str(x)) for x in X[test_index]]
         pred = [l_context[x][0] for x in range(len(l_context))]
         l_sorted_true = sortedPredictionList(pred, y[test_index])
-        tpr, fpr = score_binary(l_sorted_true)
+        scores = score_binary(l_sorted_true)
+        tpr, fpr = scores[0], scores[1]
         roc_auc = np.trapz(tpr,fpr)
         tprs.append(interp(fpr_scale, fpr, tpr))
         tprs[-1][0] = 0.0
@@ -1166,4 +1170,62 @@ def plotPR(l_prec, aucs, color, lbl, linestyle='-', lw=5):
              linestyle=linestyle, linewidth=lw,
              where='post')
     print(lbl + ' ' + str(mean_auc) +' (std : +/-' + str(std_auc) + ' )')
+    return plt
+
+def plotCustomModelPR(clf, X, y, l_folds, lbl, color, linestyle='-'):
+    """
+    [Precision Recall]
+    Plot pseudo AUC for custom models that predict the RA-diagnosis 
+    by looking at the presence of certain targets (words).
+    
+    Because the precision fluctuates (depending on the ratio TP/FP) ->
+    the precision list is sorted before plotting!
+    """
+    l_folds = preset_CV10Folds(X)
+    l_prec = []
+    aucs = []
+    recall_scale = np.linspace(0, 1, 100)
+    for train_index, test_index in l_folds:
+        
+        l_context= [clf.predict(str(x)) for x in X[test_index]]
+        pred = [l_context[x][0] for x in range(len(l_context))]
+        
+        l_sorted_true = sortedPredictionList(pred, y[test_index])
+        scores = score_binary(l_sorted_true) # score binary equiv -> met prec/ recall
+        tpr, prec = scores[0], scores[2]
+        prec[0] = 0.0
+        prec = prec.sort_values(ascending=False)#[:-1]
+        inter_prec = interp(recall_scale, tpr, prec)
+        inter_prec[0] = 1.0
+        aucs.append(metrics.auc(inter_prec, recall_scale))
+        l_prec.append(inter_prec)
+    plt = plotPR(l_prec, aucs, color, lbl, linestyle)
+    return plt
+
+
+def plotBinaryPR(clf, X, y, l_folds, lbl, color):
+    """
+    [Precision Recall]
+    Plot pseudo AUC for models without the probability function
+    
+    Because the precision fluctuates (depending on the ratio TP/FP) ->
+    the precision list is sorted before plotting!
+    """
+    l_folds = preset_CV10Folds(X)
+    l_prec = []
+    aucs = []
+    recall_scale = np.linspace(0, 1, 100)
+    for train_index, test_index in l_folds:
+        estimator = clf.fit(X[train_index], y[train_index])
+        pred = estimator.predict(X[test_index])
+        l_sorted_true = sortedPredictionList(pred, y[test_index])
+        scores = score_binary(l_sorted_true) # score binary equiv -> met prec/ recall
+        tpr, prec = scores[0], scores[2]
+        prec[0] = 0.0
+        prec = prec.sort_values(ascending=False)#[:-1]
+        inter_prec = interp(recall_scale, tpr, prec)
+        inter_prec[0] = 1.0
+        aucs.append(metrics.auc(inter_prec, recall_scale))
+        l_prec.append(inter_prec)
+    plt = plotPR(l_prec, aucs, color, lbl)
     return plt
