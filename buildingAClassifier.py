@@ -232,12 +232,18 @@ def binarize(value):
 def func(value):
     return value[1][0]
 
-def sortedPredictionList(pred, y_test):
+def sortedPredictionList(b_pred, y_test):
     """
     This function sorts the list of true labels by the
     list of predictions. The sorted list of true labels
     can be used to create a ROC-curve for a non-probability
-    classifier (a.k.a. a binary classifier like decision tree). 
+    classifier (a.k.a. a binary classifier like decision tree).
+    
+    Input:
+        b_pred = list of hard-predictions (0 or 1) 
+            or probabilities (0-1)
+        y_test = list of actual labels, binarized to 
+            1 or 0. 
     
     Example for generating 'l_sorted_true':
         Before sort:
@@ -252,15 +258,9 @@ def sortedPredictionList(pred, y_test):
             predictions label:
     """
     d_perf_dt = {}
-    b_pred = []
-    for x in pred:
-        if x == 'y':
-            b_pred.append(1)
-        elif x == 'n':
-            b_pred.append(0)
     count = 0
     for i in range(0,len(y_test)):
-        d_perf_dt[count] = [b_pred[count], binarize(y_test[count])]
+        d_perf_dt[count] = [b_pred[count], y_test[count]]
         count += 1
     orderedDict = collections.OrderedDict(sorted(d_perf_dt.items(), key=lambda k: func(k), reverse=True))
     l_sorted_pred= []
@@ -406,7 +406,6 @@ def plotFolds(clf, X, y, l_folds, color, lbl):
             the median iteration is chosen because the validation is
             done k-times with a different train/test set each time. 
     """
-    
     tprs, aucs = [], []
     tprs_t, aucs_t = [], []
     d_aucs = {}
@@ -561,14 +560,15 @@ def assessPerformance(estimator, X_test, y_test, fold, tprs, aucs, d_aucs={}):
     """
     fpr_scale = np.linspace(0, 1, 100)
     pred = estimator.predict(X_test)
-    l_sorted_true = sortedPredictionList(pred, y_test)
+    pred = np.array([binarize(val) for val in pred])
+    l_sorted_true = sortedPredictionList(pred, np.array([binarize(val) for val in y_test]))
     scores = score_binary(l_sorted_true)
     tpr, fpr = scores[0], scores[1]
     roc_auc = np.trapz(tpr,fpr)
     aucs.append(roc_auc)
     tprs.append(interp(fpr_scale, fpr, tpr))
     tprs[-1][0] = 0.0
-    d_aucs[roc_auc] = [np.array([binarize(val) for val in pred]), \
+    d_aucs[roc_auc] = [pred, \
           interp(fpr_scale, fpr, tpr), 
           estimator, fold[0], fold[1]]
     return tprs, aucs, d_aucs
@@ -653,7 +653,8 @@ def plotCustomModelROC(clf, X, y, l_folds, lbl, color, linestyle='-'):
     for train_index, test_index in l_folds:
         l_context= [clf.predict(str(x)) for x in X[test_index]]
         pred = [l_context[x][0] for x in range(len(l_context))]
-        l_sorted_true = sortedPredictionList(pred, y[test_index])
+        pred = np.array([binarize(val) for val in pred])
+        l_sorted_true = sortedPredictionList(pred, np.array([binarize(val) for val in y[test_index]]))
         scores = score_binary(l_sorted_true)
         tpr, fpr = scores[0], scores[1]
         roc_auc = np.trapz(tpr,fpr)
@@ -1059,7 +1060,7 @@ def exportTreeGraphViz(X, model, lbls, title, **kwargs):
     f.close()
     return
 
-def plotCrossValidationPR(models, X, y, l_folds, title, lbls, c, prev=None):
+def plotCrossValidationPR(models, X, y, l_folds, title, lbls, c):
     """ 
     This function checks wheter the provided input consists of one or 
     more classifiers (models). After assessing the nr. of classifiers
@@ -1082,11 +1083,11 @@ def plotCrossValidationPR(models, X, y, l_folds, title, lbls, c, prev=None):
             for every classifier provided
     """
     if type(models) == Pipeline: 
-        # only one classifier
-        plt = calculatePrecisionRecall(models, X, y, c, lbls, prev)
+        # in case only one classifier is provided
+        plt = calculatePrecisionRecall(models, X, y, c, lbls)
     else :
         for x in range(len(models)):
-            plt = calculatePrecisionRecall(models[x], X, y, c[x], lbls[x], prev)
+            plt = calculatePrecisionRecall(models[x], X, y, c[x], lbls[x])
     plt.xlim([0, 1])
     plt.ylim([0, 1])
     plt.rcParams.update({'font.size': 12})
@@ -1098,7 +1099,7 @@ def plotCrossValidationPR(models, X, y, l_folds, title, lbls, c, prev=None):
     plt.legend()
     return plt
 
-def calculatePrecisionRecall(clf, X, y_b, color, lbl, positive_prev=None):
+def calculatePrecisionRecall(clf, X, y_b, color, lbl):
     """
     Calculates the precision and recall for the provided 
     classifier (clf). 
@@ -1106,7 +1107,6 @@ def calculatePrecisionRecall(clf, X, y_b, color, lbl, positive_prev=None):
     Input: 
         X = array with text data (EHR entries)
         y_b = array with corresponding labels (binarized to 1/0)
-        positive_prev = fraction of the desired RA-cases
         clf = classifier object (Pipeline)
         color = color to represent classifier in the plot 
     
@@ -1119,24 +1119,20 @@ def calculatePrecisionRecall(clf, X, y_b, color, lbl, positive_prev=None):
     recall_scale = np.linspace(0, 1, 100)
     for train_ix, test_ix in l_folds:
         y_test = y_b[test_ix]
-        df = pd.DataFrame(data={'IX': test_ix, 'Outcome': y_test, 
-                                'XANTWOORD' : X[test_ix]})
-        if positive_prev != None:
-            y_pos = df[df['Outcome']==1].sample(n=int(len(df[df['Outcome']==0])*positive_prev), random_state=SEED)
-            y_neg = df[df['Outcome']==0].sample(n=int(len(df[df['Outcome']==0])*(1-positive_prev)), random_state=SEED)
-            df_sub = pd.concat([y_pos, y_neg])
-        else :
-            df_sub = df
-        df_sub = df_sub.sample(frac=1, random_state=SEED) # shuffle
         estimator = clf.fit(X[train_ix], y_b[train_ix])
-        probas_ = estimator.predict_proba(df_sub['XANTWOORD'])
-        precision, recall, thresholds = precision_recall_curve(df_sub['Outcome'], probas_[:, 1])
-        aucs.append(metrics.auc(recall, precision))
-        l_prec.append(interp(recall_scale, precision, recall))
+        probas_ = estimator.predict_proba(X[test_ix])
+        l_sorted_true = sortedPredictionList(probas_[:,1], y_b[test_ix])
+        scores = score_binary(l_sorted_true)
+        tpr, prec = scores[0], scores[2]
+        prec[0] = 0.0
+        inter_prec = interp(recall_scale, tpr, prec)
+        inter_prec[0] = 1.0 
+        aucs.append(calculateAUC(recall_scale, inter_prec))
+        l_prec.append(inter_prec)
     plt = plotPR(l_prec, aucs, color, lbl)
     return plt
 
-def plotPR(l_prec, aucs, color, lbl, linestyle='-', lw=5):
+def plotPR(l_prec, aucs, color, lbl, linestyle='-', lw=5, std=False):
     """
     Plot the precision recall curve by taking the
     mean of the k-folds. The standard deviation is also
@@ -1158,17 +1154,16 @@ def plotPR(l_prec, aucs, color, lbl, linestyle='-', lw=5):
     mean_precision = [*map(mean, zip(*l_prec))]
     mean_precision[-1] = 0.0
     recall_scale = np.linspace(0, 1, 100)
-    mean_auc = metrics.auc(mean_precision, recall_scale)
+    mean_auc = calculateAUC(recall_scale, mean_precision)
     std_auc = np.std(aucs)
     std_precision = np.std(mean_precision, axis=0)
-    precision_upper = np.minimum(mean_precision + std_precision, 1)
-    precision_lower = np.maximum(mean_precision - std_precision, 0)
-
-    plt.fill_between(recall_scale, precision_lower, precision_upper, color=color, alpha=.1)
-    plt.step(recall_scale, mean_precision, color=color, alpha=0.6, 
-             label=lbl + r' mean kfold (AUC = %0.2f $\pm$ %s)' % (mean_auc, std_auc),
-             linestyle=linestyle, linewidth=lw,
-             where='post')
+    if std:
+        precision_upper = np.minimum(mean_precision + std_precision, 1)
+        precision_lower = np.maximum(mean_precision - std_precision, 0)
+        plt.fill_between(recall_scale, precision_lower, precision_upper, color=color, alpha=.1)
+    plt.plot(recall_scale, mean_precision, color=color, alpha=0.6, 
+             label=lbl + r' mean kfold (AUPRC = %0.2f $\pm$ %s)' % (mean_auc, std_auc),
+             linestyle=linestyle, linewidth=lw)
     print(lbl + ' ' + str(mean_auc) +' (std : +/-' + str(std_auc) + ' )')
     return plt
 
@@ -1189,19 +1184,36 @@ def plotCustomModelPR(clf, X, y, l_folds, lbl, color, linestyle='-'):
         
         l_context= [clf.predict(str(x)) for x in X[test_index]]
         pred = [l_context[x][0] for x in range(len(l_context))]
-        
-        l_sorted_true = sortedPredictionList(pred, y[test_index])
+        pred = np.array([binarize(val) for val in pred])
+        l_sorted_true = sortedPredictionList(pred, np.array([binarize(val) for val in y[test_index]]))
         scores = score_binary(l_sorted_true) # score binary equiv -> met prec/ recall
         tpr, prec = scores[0], scores[2]
         prec[0] = 0.0
-        prec = prec.sort_values(ascending=False)#[:-1]
         inter_prec = interp(recall_scale, tpr, prec)
         inter_prec[0] = 1.0
-        aucs.append(metrics.auc(inter_prec, recall_scale))
+        aucs.append(calculateAUC(recall_scale, inter_prec))
         l_prec.append(inter_prec)
     plt = plotPR(l_prec, aucs, color, lbl, linestyle)
     return plt
 
+def calculateAUC(x, y):
+    """
+    Calculate AUC by parts by calculating the surface area of a 
+    trapzoid.
+    
+    x = x-axes 
+    y = y-axes (interpolated with x)
+    """
+    auc = 0
+    for i in range(1,len(y)):
+        last_x = x[i-1]
+        last_y = y[i-1]
+        cur_x = x[i]
+        cur_y = y[i]
+        auc += np.trapz([last_y, cur_y], [last_x, cur_x])
+    return auc
+    
+        
 
 def plotBinaryPR(clf, X, y, l_folds, lbl, color):
     """
@@ -1218,14 +1230,15 @@ def plotBinaryPR(clf, X, y, l_folds, lbl, color):
     for train_index, test_index in l_folds:
         estimator = clf.fit(X[train_index], y[train_index])
         pred = estimator.predict(X[test_index])
-        l_sorted_true = sortedPredictionList(pred, y[test_index])
+        pred = np.array([binarize(val) for val in pred])
+        l_sorted_true = sortedPredictionList(pred, np.array([binarize(val) for val in y[test_index]]))
         scores = score_binary(l_sorted_true) # score binary equiv -> met prec/ recall
         tpr, prec = scores[0], scores[2]
         prec[0] = 0.0
-        prec = prec.sort_values(ascending=False)#[:-1]
+        #prec = prec.sort_values(ascending=False)#[:-1]
         inter_prec = interp(recall_scale, tpr, prec)
         inter_prec[0] = 1.0
-        aucs.append(metrics.auc(inter_prec, recall_scale))
+        aucs.append(calculateAUC(recall_scale, inter_prec))
         l_prec.append(inter_prec)
     plt = plotPR(l_prec, aucs, color, lbl)
     return plt
