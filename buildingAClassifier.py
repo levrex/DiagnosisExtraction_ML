@@ -12,6 +12,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pattern.nl as patNL
+import pattern.de as patDE
+import pattern.en as patEN
 from pyxdameraulevenshtein import normalized_damerau_levenshtein_distance_ndarray
 import re
 from scipy import stats, interp
@@ -77,6 +79,8 @@ class TypoCorrection(object):
                 new_sent += self.d_fix[word] + ' '
             else :
                 new_sent += word + ' '
+        if 'ra' in new_sent: # confirmatie dat hij iets doet
+            print('ra in sentence')
         return new_sent
     
     def getUniqueCorrections(self):
@@ -111,7 +115,7 @@ class CustomBinaryModel(object):
         else :
             return 'n'
 
-def lemmatizingText(sentence):
+def lemmatizingText(sentence, lan='en'):
     """
     This function normalizes words with the pattern.nl package. 
     Lemmatisation returns words to the base form. The base form
@@ -124,7 +128,10 @@ def lemmatizingText(sentence):
         sentence = written text from an EHR record or another
             Natural Language type record (str)
     """
-    return ' '.join(patNL.Sentence(patNL.parse(sentence, lemmata=True)).lemmata)
+    if lan == 'nl':
+        return ' '.join(patNL.Sentence(patNL.parse(sentence, lemmata=True)).lemmata)
+    elif lan == 'en':
+        return ' '.join(patNL.Sentence(patNL.parse(sentence, lemmata=True)).lemmata)
 
 def stemmingText(sentence):
     """
@@ -729,7 +736,7 @@ def plotCrossValidationROC(models, title, lbls, X, y, l_folds, ref_auc):
                 4. test index of k-fold
                 5. train index of k-fold    
     """
-    colors = ['c', 'b', 'g', 'magenta', 'indigo', 'orange', 'black']
+    colors = ['c', 'b', 'g', 'magenta', 'indigo', 'black']
     d_aucs = {}
     fitted_models = {}
     for x in range(len(models)):
@@ -740,7 +747,7 @@ def plotCrossValidationROC(models, title, lbls, X, y, l_folds, ref_auc):
         fitted_models[lbls[x]] = medianModel
     plt.xlim([0, 1])
     plt.ylim([0, 1])
-    plt.rcParams.update({'font.size': 12})
+    #plt.rcParams.update({'font.size': 12})
     plt.legend(loc = 'lower right')
     plt.rcParams.update({'font.size': 55})
     plt.ylabel('Sensitivity (TPR)')
@@ -823,7 +830,7 @@ def plotFeatureChiSquared(X_train_fold, y_train_fold, nr_features, **kwargs):
     x_train_tfidf = tvec.fit_transform(X_train_fold)
     chi2score = chi2(x_train_tfidf, y_train_fold)[0]
     
-    plt.figure(figsize=(15,10))
+    plt.figure(figsize=(15 ,10+ 6*(nr_features/20)))
     wscores = zip(tvec.get_feature_names(), chi2score)
     wchi2 = sorted(wscores, key=lambda x:x[1])
     topchi2 = list(zip(*wchi2[-nr_features:]))
@@ -876,7 +883,7 @@ def plotFeatureCorrelation(X_train_fold, y_train_fold, nr_features,**kwargs):
               ' features', fontsize=20, fontweight='bold')
     return plt
 
-def plotFeatureImportance(model, X_train_fold, y_train_fold, nr_features, **kwargs):
+def plotFeatureImportance(model, X_train_fold, y_train_fold, nr_features, top=True, **kwargs):
     """
     Draw a feature importance plot for the top n features.
     
@@ -903,6 +910,7 @@ def plotFeatureImportance(model, X_train_fold, y_train_fold, nr_features, **kwar
         plt = matplotlib pyplot showcasing the most important features for 
             the classifier
     """
+    
     if 'ngram_range' in kwargs.keys():
         count_vect = TfidfVectorizer(ngram_range=kwargs['ngram_range'])
     else :
@@ -914,8 +922,12 @@ def plotFeatureImportance(model, X_train_fold, y_train_fold, nr_features, **kwar
     viz = FeatureImportances(model, labels=feature_to_plot, relative=False, absolute=True)
     viz.fit(X_pd[feature_to_plot], pd.Series(y_train_fold))
     plt.close(fig)
-    top_n_features = list(viz.features_)[-nr_features:] # nr_features
+    if top:
+        top_n_features = list(viz.features_)[-nr_features:] # nr_features
+    else :
+        top_n_features = list(viz.features_)[:nr_features]
     plt.figure(figsize=(8,6))
+    print(len(feature_to_plot), len(y_train_fold))
     visualizer = FeatureImportances(model, labels=top_n_features,  # feature_to_plot
                                     size=(750, 750), relative=False, absolute=True)
     visualizer.fit(X_pd[top_n_features], pd.Series(y_train_fold))
@@ -1081,32 +1093,36 @@ def plotCrossValidationPR(models, X, y, l_folds, title, lbls, c):
     Output:
         plt = matplotlib pyplot featuring multiple PR-curves
             for every classifier provided
+        d_aucs = dictionary with pr-aucs per classifier provided
     """
+    d_aucs = {}
     if type(models) == Pipeline: 
         # in case only one classifier is provided
-        plt = calculatePrecisionRecall(models, X, y, c, lbls)
+        plt, aucs = calculatePrecisionRecall(models, X, y, c, lbls)
+        d_aucs[lbls] = aucs
     else :
         for x in range(len(models)):
-            plt = calculatePrecisionRecall(models[x], X, y, c[x], lbls[x])
+            plt, aucs = calculatePrecisionRecall(models[x], X, y, c[x], lbls[x])
+            d_aucs[lbls[x]] = aucs
     plt.xlim([0, 1])
     plt.ylim([0, 1])
     plt.rcParams.update({'font.size': 12})
-    plt.legend(loc = 'lower right')
+    #plt.legend(loc = 'lower right')
     plt.rcParams.update({'font.size': 55})
     plt.xlabel('Recall')
     plt.ylabel('Precision')
     plt.title(title)
-    plt.legend()
-    return plt
+    #plt.legend()
+    return plt, d_aucs
 
-def calculatePrecisionRecall(clf, X, y_b, color, lbl):
+def calculatePrecisionRecall(clf, X, y, color, lbl):
     """
     Calculates the precision and recall for the provided 
     classifier (clf). 
     
     Input: 
         X = array with text data (EHR entries)
-        y_b = array with corresponding labels (binarized to 1/0)
+        y = array with corresponding labels (binarized to 1/0)
         clf = classifier object (Pipeline)
         color = color to represent classifier in the plot 
     
@@ -1115,24 +1131,21 @@ def calculatePrecisionRecall(clf, X, y_b, color, lbl):
             of one classifier
     """
     l_folds = preset_CV10Folds(X)
-    l_prec, aucs = [], []
+    l_prec, t_prec = [], []
+    aucs, t_aucs = [], []
     recall_scale = np.linspace(0, 1, 100)
     for train_ix, test_ix in l_folds:
-        y_test = y_b[test_ix]
-        estimator = clf.fit(X[train_ix], y_b[train_ix])
-        probas_ = estimator.predict_proba(X[test_ix])
-        l_sorted_true = sortedPredictionList(probas_[:,1], y_b[test_ix])
-        scores = score_binary(l_sorted_true)
-        tpr, prec = scores[0], scores[2]
-        prec[0] = 0.0
-        inter_prec = interp(recall_scale, tpr, prec)
-        inter_prec[0] = 1.0 
-        aucs.append(calculateAUC(recall_scale, inter_prec))
-        l_prec.append(inter_prec)
+        y_test = y[test_ix]
+        estimator = clf.fit(X[train_ix], y[train_ix])
+        #l_prec, scores, t_aucs = assessPerformancePR_proba()
+        l_prec, aucs, scores = assessPerformancePR(estimator, X[test_ix], y[test_ix], l_prec, aucs) #
+        t_prec, t_aucs, t_scores = assessPerformancePR(estimator, X[train_ix], y[train_ix], t_prec, t_aucs) #
+    plotPR(t_prec, t_aucs, color, lbl, '-', 5, False, True)
+    #plt = plotPR(l_prec, aucs, color, lbl)
     plt = plotPR(l_prec, aucs, color, lbl)
-    return plt
+    return plt, aucs
 
-def plotPR(l_prec, aucs, color, lbl, linestyle='-', lw=5, std=False):
+def plotPR(l_prec, aucs, color, lbl, linestyle='-', lw=5, std=False, train=False):
     """
     Plot the precision recall curve by taking the
     mean of the k-folds. The standard deviation is also
@@ -1161,10 +1174,11 @@ def plotPR(l_prec, aucs, color, lbl, linestyle='-', lw=5, std=False):
         precision_upper = np.minimum(mean_precision + std_precision, 1)
         precision_lower = np.maximum(mean_precision - std_precision, 0)
         plt.fill_between(recall_scale, precision_lower, precision_upper, color=color, alpha=.1)
-    plt.plot(recall_scale, mean_precision, color=color, alpha=0.6, 
-             label=lbl + r' mean kfold (AUPRC = %0.2f $\pm$ %s)' % (mean_auc, std_auc),
-             linestyle=linestyle, linewidth=lw)
-    print(lbl + ' ' + str(mean_auc) +' (std : +/-' + str(std_auc) + ' )')
+    if train==False:
+        plt.plot(recall_scale, mean_precision, color=color, alpha=0.6, 
+                 label=lbl + r' mean kfold (AUPRC = %0.2f $\pm$ %s)' % (mean_auc, std_auc),
+                 linestyle=linestyle, linewidth=lw)
+    print(train * 'Train ' + lbl + ' ' + str(mean_auc) + ' (std : +/-' + str(std_auc) + ' )')
     return plt
 
 def plotCustomModelPR(clf, X, y, l_folds, lbl, color, linestyle='-'):
@@ -1181,7 +1195,6 @@ def plotCustomModelPR(clf, X, y, l_folds, lbl, color, linestyle='-'):
     aucs = []
     recall_scale = np.linspace(0, 1, 100)
     for train_index, test_index in l_folds:
-        
         l_context= [clf.predict(str(x)) for x in X[test_index]]
         pred = [l_context[x][0] for x in range(len(l_context))]
         pred = np.array([binarize(val) for val in pred])
@@ -1194,7 +1207,7 @@ def plotCustomModelPR(clf, X, y, l_folds, lbl, color, linestyle='-'):
         aucs.append(calculateAUC(recall_scale, inter_prec))
         l_prec.append(inter_prec)
     plt = plotPR(l_prec, aucs, color, lbl, linestyle)
-    return plt
+    return plt, aucs
 
 def calculateAUC(x, y):
     """
@@ -1213,7 +1226,33 @@ def calculateAUC(x, y):
         auc += np.trapz([last_y, cur_y], [last_x, cur_x])
     return auc
     
-        
+def assessPerformancePR(clf, X_test, y_test, l_prec, aucs, proba=True):
+    """
+    Assess the precision & recall characteristics of the provided classifier (clf)
+    
+    Input: 
+        proba = specify if function works with probabilities
+    
+    Output:
+        l_prec = list of precision scores
+        aucs = list of auc scores per iteration
+        scores = list of precision & recall scores at every position on the recall scale
+    """
+    recall_scale = np.linspace(0, 1, 100)
+    if (proba) :
+        probas_ = clf.predict_proba(X_test)
+        pred = probas_[:,1]
+    else :
+        pred = clf.predict(X_test)
+    l_sorted_true = sortedPredictionList(pred, y_test)
+    scores = score_binary(l_sorted_true) # score binary equiv -> met prec/ recall
+    tpr, prec = scores[0], scores[2]
+    prec[0] = 0.0
+    inter_prec = interp(recall_scale, tpr, prec)
+    inter_prec[0] = 1.0
+    aucs.append(calculateAUC(recall_scale, inter_prec))
+    l_prec.append(inter_prec)
+    return l_prec, aucs, scores
 
 def plotBinaryPR(clf, X, y, l_folds, lbl, color):
     """
@@ -1224,21 +1263,409 @@ def plotBinaryPR(clf, X, y, l_folds, lbl, color):
     the precision list is sorted before plotting!
     """
     l_folds = preset_CV10Folds(X)
-    l_prec = []
-    aucs = []
-    recall_scale = np.linspace(0, 1, 100)
+    l_prec, t_prec = [], []
+    aucs, t_aucs = [], []
     for train_index, test_index in l_folds:
         estimator = clf.fit(X[train_index], y[train_index])
-        pred = estimator.predict(X[test_index])
-        pred = np.array([binarize(val) for val in pred])
-        l_sorted_true = sortedPredictionList(pred, np.array([binarize(val) for val in y[test_index]]))
-        scores = score_binary(l_sorted_true) # score binary equiv -> met prec/ recall
-        tpr, prec = scores[0], scores[2]
-        prec[0] = 0.0
-        #prec = prec.sort_values(ascending=False)#[:-1]
-        inter_prec = interp(recall_scale, tpr, prec)
-        inter_prec[0] = 1.0
-        aucs.append(calculateAUC(recall_scale, inter_prec))
-        l_prec.append(inter_prec)
+        l_prec, aucs, scores = assessPerformancePR(clf, X[test_index], y[test_index], l_prec, aucs, proba=False)
+        t_prec, t_aucs, t_scores = assessPerformancePR(clf, X[train_index], y[train_index], t_prec, t_aucs)
+    plotPR(t_prec, t_aucs, color, lbl, '-', 5, False, True)
     plt = plotPR(l_prec, aucs, color, lbl)
-    return plt
+    return plt, aucs
+
+class TextClassification(object):
+    ## TODO
+    def __init__(self, X, y, model_list=[], names=[]):
+        """
+        Initialize the machine learning class where the 
+        performance of multiple classifiers can be evaluated.
+        
+        Input:
+            df = pandas Dataframe with text and labels
+            X = text data from the entries
+            y = labels
+            Model list = list of sklearn Pipelines with 
+                different classifiers
+        """
+        self.model_list = model_list
+        self.X = X
+        self.y = y
+        self.k_folds = preset_CV10Folds(X)
+        # of median iteration
+        self.fittedmodels = {}
+        self.d_conf = {}
+        self.l_method = []
+        self.medIter = 0 # change to a list
+        
+        self.colors = ['c', 'b', 'g', 'magenta', 'indigo', 'orange', 'black']
+        ## Functions to add : getDict(), createDict()
+    
+    def binarizeLabel(self, l, true_label='y'):
+        """
+        This function codifies the provided binary labels
+         to 1 and 0 according to the true label that was specified
+        """
+        self.y = np.array([int(i == true_label) for i in self.y])
+    
+    def fitModels(self):
+        # AUC weghalen 
+        # Later -> identify proba methods & non-proba methods and account for those
+        #p#rint(self.model_list)
+        d_conf = {}
+        for clf in range(len(self.model_list)):
+            lbl = self.model_list[clf]['clf'].__class__.__name__
+            print('fitting model: ', lbl)
+            estimator = self.model_list[clf]
+            self.l_method.append(self.model_list[clf])
+            d_conf[lbl] = self.fitting(estimator, lbl) # plt, mean_auc, aucs, medianModel = 
+            print('nr of iterations: ', len(d_conf[lbl]))
+            break
+        self.d_conf = d_conf
+            
+    def createDictionary(self, clf='Gradient Boosting', **kwargs):
+        """
+        Creates a dictionary of terms for the median iteration
+        
+        Input:
+            clf = name of classifier
+        """
+        X_train_fold = self.X[self.fitted_models[clf][4]] # 4 - train index
+        if 'ngram_range' in kwargs.keys():
+            count_vect = TfidfVectorizer(ngram_range=kwargs['ngram_range'])
+        else :
+            count_vect = TfidfVectorizer()
+        X_train_tfidf = count_vect.fit_transform(X_train_fold) 
+        print(len(X_train_tfidf))
+        return
+    
+    
+    def scores(self, lbl, iteration):
+        # 0=tp, 1=fp, 2=tn, 3=fn
+        d = self.d_conf[lbl][iteration]
+        print(d[len(d)-1])
+        acc = [(d[i][0] + d[i][2])/(d[i][0]+d[i][1]+d[i][2]+d[i][3]) for i in d.keys()]
+        tpr = [d[i][0]/(d[i][0]+d[i][3]) if (d[i][0]+d[i][3]) != 0 else 0 for i in d.keys()]
+        fpr = [d[i][1]/(d[i][1]+d[i][2]) if (d[i][1]+d[i][2]) != 0 else 0 for i in d.keys()]
+        prec = [d[i][0]/(d[i][0]+d[i][1]) if (d[i][0]+d[i][1]) != 0 else 0 for i in d.keys()]
+        #print(tpr)
+        #exit()
+        return [acc, tpr, prec, fpr]
+    
+    def plotROC(self, lbl):
+        """
+        Calculates the precision and recall for the provided 
+        classifier (clf). 
+
+        Input: 
+            X = array with text data (EHR entries)
+            y_b = array with corresponding labels (binarized to 1/0)
+            clf = classifier object (Pipeline)
+            color = color to represent classifier in the plot 
+
+        Output:
+            plt = matplotlib pyplot featuring the Precision Recall curve
+                of one classifier
+        """
+        l_roc, aucs = [], []
+        fpr_scale = np.linspace(0, 1, 100)
+        tprs = []
+        for x in range(len(self.d_conf[lbl])): # loop through iterations
+            #scores = self.scores(lbl, x)
+            tpr, fpr = self.d_conf[lbl][x]['tpr'], self.d_conf[lbl][x]['fpr']#scores[1], scores[3]
+            tprs.append(interp(fpr_scale, fpr, tpr))
+            tprs[-1][0] = 0.0
+            auc = calculateAUC(fpr, tpr)
+            self.d_conf[lbl][x]['auc'] = auc
+            aucs.append(auc) # remove later on
+            print('la')
+        #plt = plotSTD(l_roc, aucs, self.colors[0], lbl)
+        plt, mean_auc = plotSTD(tprs, aucs, self.colors[0], lbl)
+        #plotSTD(tprs_t, aucs_t, color, 'Train-score ' + lbl, '-', 5, 0)
+        return plt
+    
+    
+    def plotPrecisionRecall(self, lbl):
+        """
+        Calculates the precision and recall for the provided 
+        classifier (clf). 
+
+        Input: 
+            X = array with text data (EHR entries)
+            y_b = array with corresponding labels (binarized to 1/0)
+            clf = classifier object (Pipeline)
+            color = color to represent classifier in the plot 
+
+        Output:
+            plt = matplotlib pyplot featuring the Precision Recall curve
+                of one classifier
+        """
+        l_prec, aucs = [], []
+        recall_scale = np.linspace(0, 1, 100)
+        print(len(self.d_conf[lbl]))
+        for x in range(len(self.d_conf[lbl])): # loop through iterations
+            tpr, prec = self.d_conf[lbl][x]['tpr'], self.d_conf[lbl][x]['prc']
+            prec[0] = 0.0
+            inter_prec = interp(recall_scale, tpr, prec)
+            inter_prec[0] = 1.0 
+            auc = calculateAUC(recall_scale, inter_prec)
+            self.d_conf[lbl][x]['auc'] = auc
+            aucs.append(auc)
+            l_prec.append(inter_prec)
+        aucs = [self.d_conf[lbl][j]['auc'] for j in range(len(self.d_conf[lbl]))]
+        aucs.sort()
+        middleIndex = round((len(aucs) - 1)/2) # normally 5 -> if 10 fold
+        medianModel = self.fittedmodels[lbl][middleIndex] # change to actual label
+        foldTrueLbl = medianModel[3]
+        self.medIter = middleIndex # toDo
+        
+        writePredictionsToFile(lbl, medianModel[1], foldTrueLbl)
+        plt = plotPR(l_prec, aucs, self.colors[0], lbl)
+        return plt, medianModel[0]
+    
+    def assessPerformance(self, lbl, clf, iteration, X_test, y_test, proba=True):
+        recall_scale = np.linspace(0, 1, 100)
+        if (proba) :
+            probas_ = clf.predict_proba(X_test)
+            pred = probas_[:,1]
+        else :
+            pred = clf.predict(X_test)
+        
+        # later echt median pakken
+        self.medTrue = y_test
+        self.medPred = pred
+        l_sorted_true, l_sorted_pred = self.sortedPredictionList(pred, y_test)
+        self.fittedmodels[lbl][iteration] = [clf, pred, X_test, y_test] 
+        d_conf = self.score_binary(l_sorted_true, l_sorted_pred) # score binary equiv -> met prec/ recall
+        return d_conf
+    
+    def sortedPredictionList(self, b_pred, y_test):
+        """
+        This function sorts the list of true labels by the
+        list of predictions. The sorted list of true labels
+        can be used to create a ROC-curve for a non-probability
+        classifier (a.k.a. a binary classifier like decision tree).
+
+        Input:
+            b_pred = list of hard-predictions (0 or 1) 
+                or probabilities (0-1)
+            y_test = list of actual labels, binarized to 
+                1 or 0. 
+
+        Example for generating 'l_sorted_true':
+            Before sort:
+               pred: 0 1 1 0 1 0 1 0 1 1 1 0 1 0
+               true: 0 1 0 0 1 0 0 1 1 0 1 0 1 1
+            After sort:
+               pred: 1 1 1 1 1 1 1 1 0 0 0 0 0 0 
+            -> true: 1 1 0 1 0 0 1 1 0 0 1 1 0 0
+
+        Output:
+            l_sorted_true = list of true label sorted on the 
+                predictions label:
+        """
+        d_perf_dt = {}
+        count = 0
+        for i in range(0,len(y_test)):
+            d_perf_dt[count] = [b_pred[count], y_test[count]]
+            count += 1
+        orderedDict = collections.OrderedDict(sorted(d_perf_dt.items(), key=lambda k: func(k), reverse=True))
+        l_sorted_pred= []
+        l_sorted_true = []
+        for x in orderedDict.items():
+            l_sorted_pred.append(x[1][0])
+            l_sorted_true.append(x[1][1])
+        return l_sorted_true, l_sorted_pred
+    
+    def confusion_window(self, l_true, l_pred):
+        """
+        makes a record at every point it registers the confusion matrix
+        l_true and l_pred are sorted
+        """
+        dummi = l_true
+        dummi = [2 if x==0 else x for x in dummi]
+        dummi = [x -1 for x in dummi]
+        
+        # Compute basic statistics:
+        #TP = pd.Series(l_true).cumsum()
+        #FP = pd.Series(dummi).cumsum()
+        d_conf = {}
+        #l_true = [2 if x==0 else x for x in dummi]
+        #l_true = [x -1 for x in dummi]
+        tp, fp, tn, fn = 0, 0, 0, 0
+        l_tp, l_fp, l_tn, l_fn = [], [], [], []
+        for i in range(len(l_true)) :
+            if l_true[i]==1 : # actual case
+                fn +=  1 - l_pred[i]
+                tp += l_pred[i]
+            elif l_true[i]==0 : # no case
+                fp += l_pred[i]
+                tn += 1 - l_pred[i]
+            l_tp.append(tp)
+            l_fp.append(fp)
+            l_tn.append(tn)
+            l_fn.append(fn)
+        l_true.insert(0,0)
+        dummi.insert(0,0)
+        P = sum(l_true)
+        N = sum(dummi)
+        TPR = pd.Series(l_tp).divide(P) # sensitivity / hit rate / recall
+        FPR = pd.Series(l_fp).divide(N)  # fall-out
+        PRC = pd.Series(l_tp).divide(pd.Series(l_tp) + pd.Series(l_fp))
+        d_conf = {'tp': l_tp, 'fp': l_fp, 'fn': l_fn, 'fn': l_tn, 'tpr': TPR, 'fpr': FPR, 'prc': PRC}
+        return d_conf
+    
+    def score_binary(self, l_true, l_pred):
+        """
+        Calculates the dummy true en false positive rate for 
+        a classifier that doesn't calculate probabilities 
+
+        Input:
+            l_true = list of true label sorted on the 
+                predictions label.
+                The function sortedPredictionList can
+                be used to generate such a list!
+        Output:
+            TPR = list with true positive rates 
+            FPR = list with false positive rates 
+            PRC = list with precision (PPV)
+        """
+        dummi = l_true
+        dummi = [2 if x==0 else x for x in dummi]
+        dummi = [x -1 for x in dummi]
+        l_pred.insert(0,0)
+        l_true.insert(0,0)
+        dummi.insert(0,0)
+        # Compute basic statistics:
+        TP = pd.Series(l_true).cumsum()
+        FP = pd.Series(dummi).cumsum()
+        P = sum(l_true)
+        N = sum(dummi)
+        TPR = TP.divide(P) # sensitivity / hit rate / recall
+        FPR = FP.divide(N)  # fall-out
+        PRC = TP.divide(TP + FP) # precision
+        #d_conf = {}
+        d_conf = {'tpr': TPR, 'fpr': FPR, 'prc': PRC, 'threshold': l_pred}
+        return d_conf #[TPR, FPR, PRC]
+    
+    
+    def fitting(self, clf, lbl):
+        """
+        Calculates the sensitivity and auc for the provided 
+        classifier (clf) for every fold in the k-fold validation. 
+        The average auc is determined for both the trainingsset & the 
+        testset.
+
+        K-fold crossvalidation is utilized to give a higher resolution
+        of the performance of the classifier.
+
+        The median model (with the median AUC) will be used to 
+        calculate the optimal cut-off & will be returned as 
+        output.
+
+        Input: 
+            X = array with text data (EHR entries)
+            y = array with corresponding labels (binarized to 1/0)
+            l_folds = array of k-folds 
+            clf = classifier object (Pipeline)
+            color = color to represent classifier in the plot 
+            lbl = name of classifier
+
+        Output:
+            plt = matplotlib pyplot featuring the Precision Recall curve
+                of one classifier
+            mean_auc = float of mean auc
+            aucs = array of auc scores (used to assess medianModel)
+            medianModel = median iteration of the classifier ->
+                the median iteration is chosen because the validation is
+                done k-times with a different train/test set each time. 
+        """
+        d_conf = {}
+        iteration = 0
+        self.fittedmodels[lbl] = {} # initialize entry
+        for train_index, test_index in self.k_folds:
+            fold = [test_index, train_index]
+            Xtr, Xte = self.X[train_index], self.X[test_index]
+            estimator = clf.fit(Xtr, self.y[train_index])
+            d_conf[iteration] = self.assessPerformance(lbl, estimator, iteration, Xte, self.y[test_index], fold)
+            iteration += 1
+        return d_conf
+    
+    def getConfusionMatrix(self, lbl, desired=0.9, most_val='tpr', **kwargs): # , **kwargs
+        medIter = self.medIter # change to dict with label todo
+        print('Generating confusion matrix for', lbl, 'based on median Iteration (AUPRC): ', medIter)
+        d = self.d_conf[lbl][medIter][most_val]
+        l_cols = [i for i in self.d_conf[lbl][medIter].keys() if i not in [most_val, 'threshold', 'fpr', 'auc']] # 'prc', 
+        l_candidates = [i for i in range(len(d)) if d[i]>desired]
+        max_l = [0]
+        thresh = 0
+        print('Other weighing variables: ', l_cols)
+        for i in l_candidates:
+            l = [self.d_conf[lbl][medIter][c][i] for c in self.d_conf[lbl][medIter].keys() if c in l_cols ]
+            #print(l)
+            if sum(l) > sum(max_l):
+                max_l = l
+                #print(l)
+                thresh = self.d_conf[lbl][medIter]['threshold'][i]
+                fpr = self.d_conf[lbl][medIter]['fpr'][i]
+                prc = self.d_conf[lbl][medIter]['prc'][i]
+                tpr = self.d_conf[lbl][medIter]['tpr'][i]
+        print('Thresh: %.2f' % thresh, '\nPRC: \t%.2f' % prc, '\nSens: \t%.2f' % tpr, '\nFPR: \t%.2f' % fpr)
+        self.plot_confusion_matrix(lbl, thresh)
+    
+    def plot_confusion_matrix(self, lbl, desired, classes=[0,1],
+                          normalize=False,
+                          title=None,
+                          cmap=plt.cm.Blues):
+        """
+        [SKLEARN function]
+        This function prints and plots the confusion matrix.
+        Normalization can be applied by setting `normalize=True`.
+        """
+        medIter = self.medIter
+        y_true =  self.fittedmodels[lbl][medIter][3]
+        y_proba = self.fittedmodels[lbl][medIter][1]
+        y_pred = [int(i >= desired) for i in y_proba]
+        if not title:
+            if normalize:
+                title = 'Normalized confusion matrix'
+            else:
+                title = 'Confusion matrix, without normalization'
+
+        # Compute confusion matrix
+        cm = confusion_matrix(y_true, y_pred)
+        # Only use the labels that appear in the data
+        #classes = classes[unique_labels(y_true, y_pred)]
+        if normalize:
+            cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+            print("Normalized confusion matrix")
+        else:
+            print('Confusion matrix, without normalization')
+
+        print(cm)
+
+        fig, ax = plt.subplots()
+        im = ax.imshow(cm, interpolation='nearest', cmap=cmap)
+        ax.figure.colorbar(im, ax=ax)
+        # We want to show all ticks...
+        ax.set(xticks=np.arange(cm.shape[1]),
+               yticks=np.arange(cm.shape[0]),
+               # ... and label them with the respective list entries
+               xticklabels=classes, yticklabels=classes,
+               title=title,
+               ylabel='True label',
+               xlabel='Predicted label')
+
+        # Rotate the tick labels and set their alignment.
+        plt.setp(ax.get_xticklabels(), rotation=45, ha="right",
+                 rotation_mode="anchor")
+
+        # Loop over data dimensions and create text annotations.
+        fmt = '.2f' if normalize else 'd'
+        thresh = cm.max() / 2.
+        for i in range(cm.shape[0]):
+            for j in range(cm.shape[1]):
+                ax.text(j, i, format(cm[i, j], fmt),
+                        ha="center", va="center",
+                        color="white" if cm[i, j] > thresh else "black")
+        fig.tight_layout()
+        return ax
