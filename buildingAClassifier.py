@@ -104,7 +104,14 @@ class CustomBinaryModel(object):
     def getTargets(self):
         return self.targets
     
-    def predict(self, report):
+    def binarize(value):
+        """
+        This function codifies the binary labels 'y' and 'n'
+         to 1 and 0.
+        """
+        return int(value == 'y')
+    
+    def judgeEntry(self, report):
         """
         Predict the class on the presence of certain words (targets)
         in the free written text from EHR records
@@ -114,6 +121,16 @@ class CustomBinaryModel(object):
             return 'y'
         else :
             return 'n'
+
+    def predict(self, X):
+        """
+        Predict multiple EHR entries and return the predictions
+        """
+        l_context= [self.judgeEntry(str(x)) for x in X]
+        pred = [l_context[x][0] for x in range(len(l_context))]
+        pred = np.array([self.binarize(val) for val in pred])
+        return pred
+        
 
 def lemmatizingText(sentence, lan='en'):
     """
@@ -1297,7 +1314,7 @@ class TextClassification(object):
         self.l_method = []
         self.medIter = 0 # change to a list
         
-        self.colors = ['c', 'b', 'g', 'magenta', 'indigo', 'orange', 'black']
+        self.colors = ['r', 'y', 'c', 'b', 'g', 'magenta', 'indigo', 'orange', 'black']
         ## Functions to add : getDict(), createDict()
     
     def binarizeLabel(self, l, true_label='y'):

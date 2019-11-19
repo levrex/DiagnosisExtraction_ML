@@ -26,16 +26,59 @@ from yellowbrick.target import FeatureCorrelation
 from yellowbrick.features.importances import FeatureImportances
 from yellowbrick.text import DispersionPlot
 from sklearn.feature_selection import chi2
-SEED = 26062019
-OUTPUT_PATH = r'output_files/'
 
 def func(value):
     return value[1][0]
 
+class CustomBinaryModel(object):
+    """
+    Summary class:
+        Use this class to create a binary prediction model
+        that classifies entries according to the presence of
+        targets (words) in the free written text. The targets
+        can be provided during the creation of the object or 
+        by calling the setTargets function
+    """
+    def __init__(self, targets):
+        self.targets = targets
+        
+    def setTargets(self, targets):
+        self.targets = targets
+    
+    def getTargets(self):
+        return self.targets
+    
+    def binarize(self, value):
+        """
+        This function codifies the binary labels 'y' and 'n'
+         to 1 and 0.
+        """
+        return int(value == 'y')
+    
+    def judgeEntry(self, report):
+        """
+        Predict the class on the presence of certain words (targets)
+        in the free written text from EHR records
+        """
+        regexp = re.compile(r'\b('+r'|'.join(self.targets)+r')\b')
+        if regexp.search(report):
+            return 'y'
+        else :
+            return 'n'
+
+    def predict(self, X):
+        """
+        Predict multiple EHR entries and return the predictions
+        """
+        l_context= [self.judgeEntry(str(x)) for x in X]
+        pred = [l_context[x][0] for x in range(len(l_context))]
+        pred = np.array([self.binarize(val) for val in pred])
+        return pred
+
 class TextClassification(object):
     ## TODO : fixing feature importance
     ##  and integrating simple word matching
-    def __init__(self, X, y, model_list=[], names=[]):
+    def __init__(self, X, y, model_list=[], names=[], seed=26062019):
         """
         Initialize the machine learning class where the 
         performance of multiple classifiers can be evaluated.
@@ -46,35 +89,90 @@ class TextClassification(object):
             y = labels
             Model list = list of sklearn Pipelines with 
                 different classifiers
+            seed = seed for creating the folds to ensure same output
         """
         self.model_list = model_list
         self.X = X
         self.y = y
+        self.seed = seed
+        self.iterations = 10
+        self.test_size = 0.5
+        self.names = names
         #self.k_folds = preset_CV10Folds(X)
         # of median iteration
         self.fittedmodels = {}
         self.d_conf = {}
+        self.d_aucs = {}
+        self.d_auprcs = {}
         self.l_method = []
         self.medIter = {} # dictionary key : medIter
+        self.palette = ['r', 'y', 'c', 'b', 'g', 'magenta', 'indigo', 'black', 'orange'] 
+        self.output_path = r'output_files/'
         self.colors = {}
-        ## Functions to add : getDict(), createDict()
     
-    def assignPalette(self, colors=['c', 'b', 'g', 'magenta', 'indigo', 'orange', 'black']):
-        l_lbls = [self.model_list[i]['clf'].__class__.__name__ for i in range(len(self.model_list))]
+    def getAUC(self):
+        return self.d_aucs
+    
+    def getAUPRC(self):
+        return self.d_auprcs
+    
+    def setOutputPath(self, output_path):
+        """
+        Update output path with the pathway to the directory requested by the user
+        """
+        self.output_path = output_path
+        
+    def getOutputPath(self):
+        """
+        Retrieve pathway to current directory for output
+        """
+        return self.output_path
+        
+        
+    def setSeed(self, seed):
+        """
+        Update seed with the provided user input
+        """
+        self.seed = seed 
+
+    def getSeed(self):
+        """
+        Retrieve current seed that is used for the fold creation
+        Reminder: if you change the seed you are likely to get a different
+            output because you will have a different random train/test-split. 
+        """
+        return self.seed
+    
+    def setIterations(self, iterations):
+        """
+        Update nr of iterations with the provided user input
+        """
+        self.iterations = iterations
+
+    def getIterations(self):
+        """
+        Retrieve current nr of iterations that is used for the fold creation
+        """
+        return self.iterations
+        
+    def assignPalette(self, palette=[]):
+        l_lbls = self.names #[self.model_list[i]['clf'].__class__.__name__ for i in range(len(self.model_list))]
+        if palette == []:
+            palette = self.palette
         for i in range(len(l_lbls)):
-            self.colors[l_lbls[i]] = colors[i]
+            self.colors[l_lbls[i]] = palette[i]
         print(self.colors)
         
-    def preset_CV10Folds(self):
+    def splitData(self):
         """
-        Split the dataset randomly 10 times for k-fold
-        cross validation. 
+        Split the dataset randomly n-times (defined by self.iterations) for k-fold
+        cross validation. The size of the test_size is defined by self.test_size. 
         
         Output:
             l_folds = list containing the indices for the train/test
                 entries, required to contstruct the k-folds.
         """
-        ss = ShuffleSplit(n_splits=10, test_size=0.5, random_state=SEED)
+        ss = ShuffleSplit(n_splits=self.iterations, test_size=self.test_size, random_state=self.seed)
         l_folds = ss.split(self.X)
         return l_folds
     
@@ -90,14 +188,17 @@ class TextClassification(object):
         # Later -> identify proba methods & non-proba methods and account for those
         #p#rint(self.model_list)
         d_conf = {}
+        iterat = 0
+        print('\nGeneral settings for training/testing:')
+        print('Method = Cross Validation ' + str(self.iterations) + '-fold')
+        print('\tfraction test:\t', self.test_size, '\n')
         for clf in range(len(self.model_list)):
-            lbl = self.model_list[clf]['clf'].__class__.__name__
+            lbl = self.names[iterat]
             print('loading model: ', lbl)
             estimator = self.model_list[clf]
             self.l_method.append(self.model_list[clf])
             d_conf[lbl] = self.fitting(estimator, lbl) # plt, mean_auc, aucs, medianModel = 
-            print('nr of iterations: ', len(d_conf[lbl]))
-            #break
+            iterat += 1
         self.d_conf = d_conf
             
     def createDictionary(self, clf='Gradient Boosting', **kwargs):
@@ -118,18 +219,42 @@ class TextClassification(object):
     
     
     def scores(self, lbl, iteration):
-        # 0=tp, 1=fp, 2=tn, 3=fn
+        """
+        Assess different performance characteristicat every point in the 
+        sorted list of true labels. The list is sorted according to the probabilities. 
+        In methods that don't use probabilities, pseudo-metrics are calculated.
+        """
         d = self.d_conf[lbl][iteration]
         print(d[len(d)-1])
         acc = [(d[i][0] + d[i][2])/(d[i][0]+d[i][1]+d[i][2]+d[i][3]) for i in d.keys()]
         tpr = [d[i][0]/(d[i][0]+d[i][3]) if (d[i][0]+d[i][3]) != 0 else 0 for i in d.keys()]
         fpr = [d[i][1]/(d[i][1]+d[i][2]) if (d[i][1]+d[i][2]) != 0 else 0 for i in d.keys()]
         prec = [d[i][0]/(d[i][0]+d[i][1]) if (d[i][0]+d[i][1]) != 0 else 0 for i in d.keys()]
-        #print(tpr)
-        #exit()
         return [acc, tpr, prec, fpr]
     
-    def plotROC(self, lbl_list=[]):
+    def plotSettings(self, category='ROC'):
+        """
+        Setting for creating an ROC-plot or PR-plot
+        """
+        params = {'legend.fontsize': 10,
+          'figure.figsize': (14+2*(category=='PR'),10),
+          'axes.grid': False,
+         'axes.labelsize': 26,
+         'axes.titlesize':'xx-small',
+         'xtick.labelsize':22,
+          'axes.labelcolor' : 'k',
+          'ytick.color' : 'k',
+          'xtick.color': 'k',
+        'font.weight':'regular',
+         'ytick.labelsize':22}
+        plt.rcParams.update(params)
+        plt.figure()
+        plt.xlim([0, 1])
+        plt.ylim([0, 1])
+        #plt.rcParams.update({'font.size': 12})
+        return plt
+    
+    def plotROC(self, lbl_list=[], legend=True):
         """
         Calculates the specificity and sensitivity for the provided 
         classifier (clf). 
@@ -144,13 +269,22 @@ class TextClassification(object):
             plt = matplotlib pyplot featuring the ROC curve
                 of a single or a multitude of classifiers
         """
+        plt = self.plotSettings()
+        plt.ylabel('Sensitivity (TPR)')
+        plt.xlabel('1 - Specificity (FPR)')
+        
         if lbl_list == []:
             lbl_list = list(self.d_conf.keys())
         if type(lbl_list) == list:
             for lbl in lbl_list:
-                plt = self.modelROC(lbl)
+                plt, aucs = self.modelROC(lbl)
+                self.d_aucs[lbl] = aucs
         elif type(lbl_list) == str:
-            plt = self.modelROC(lbl_list)
+            plt, aucs = self.modelROC(lbl_list)
+            self.d_aucs[lbl_list] = aucs
+        plt.legend(loc = 'lower right')
+        if legend :
+            plt.rcParams.update({'font.size': 55})
         return plt
     
     def plotPR(self, l_prec, aucs, color, lbl, linestyle='-', lw=5, std=False):
@@ -228,9 +362,9 @@ class TextClassification(object):
             auc = self.calculateAUC(fpr, tpr)
             self.d_conf[lbl][x]['auc'] = auc
             aucs.append(auc) # remove later on
-        plt, mean_auc = self.plotSTD(tprs, aucs, self.colors[lbl], lbl)
+        plt= self.plotSTD(tprs, aucs, self.colors[lbl], lbl)
         #self.plotSTD(tprs_t, aucs_t, color, 'Train-score ' + lbl, '-', 5, 0)
-        return plt
+        return plt, aucs
     
     def writePredictionsToFile(self, name, pred, true):
         """
@@ -244,10 +378,10 @@ class TextClassification(object):
         """
         d = {'PRED': pred, 'TRUE': true}
         df = pd.DataFrame(data=d)
-        df.to_csv(OUTPUT_PATH + 'pred' + name.replace(" ", "") + '.csv', sep='|', index=False)
+        df.to_csv(self.output_path + 'pred' + name.replace(" ", "") + '.csv', sep='|', index=False)
         return
     
-    def modelPrecisionRecall(self, lbl):
+    def modelPrecisionRecall(self, lbl, plot=True):
         """
         Calculates the precision and recall for the provided 
         classifier (clf). 
@@ -277,30 +411,71 @@ class TextClassification(object):
         foldTrueLbl = medianModel[3]
         self.medIter[lbl] = middleIndex # toDo
         self.writePredictionsToFile(lbl, medianModel[1], foldTrueLbl)
-        plt = self.plotPR(l_prec, aucs, self.colors[lbl], lbl)
+        if plot : 
+            plt = self.plotPR(l_prec, aucs, self.colors[lbl], lbl)
+            return plt, aucs
+        else :
+            return 
+    
+    def plotScatter(self, lbl):
+        """
+        Required : fitted models
+        
+        This function creates a scatter plot based
+        on the median iteration of the provided classifier (lbl)
+        """
+        params = {'legend.fontsize': 10,
+          'figure.figsize': (8,6),
+          'axes.grid': False,
+         'axes.labelsize': 26,
+         'axes.titlesize':'xx-small',
+         'xtick.labelsize':22,
+          'axes.labelcolor' : 'k',
+          'ytick.color' : 'k',
+          'xtick.color': 'k',
+        'font.weight':'regular',
+         'ytick.labelsize':22}
+        plt.rcParams.update(params)
+        
+        try :
+            middleIndex = self.medIter[lbl]
+        except :
+            print('Retrieving fitted' + str(lbl) + '(default=Median Iteration)')
+            self.modelPrecisionRecall(lbl, plot=False)
+            middleIndex = self.medIter[lbl]
+        medianModel = self.fittedmodels[lbl][middleIndex] 
+        foldTrueLbl = medianModel[3]
+        plt.scatter(x=medianModel[1], y=list(range(len(medianModel[1]))), c=foldTrueLbl, cmap='viridis')    
         return plt
     
-    def getMedianModel(self, lbl):
+    def getTrainedClassifier(self, lbl, write=True):
         """
-        Required : fitted models & assessed median model
+        Required : fitted models
         
         This function retrieves the median iteration of the
-        specified classifier (lbl)
+        specified classifier (lbl). If the median iteration
+        has not yet been determined than this iteration is 
+        calculated. 
         
         Input 
             lbl = name of classifier
         Output:
             medianModel = median iteration of classifier
         """
-        middleIndex = self.medIter[lbl]
-        medianModel = self.fittedmodels[lbl][middleIndex] # change to actual label
+        try :
+            middleIndex = self.medIter[lbl]
+        except :
+            print('Retrieving fitted' + str(lbl) + '(default=Median Iteration)')
+            self.modelPrecisionRecall(lbl, plot=False)
+            middleIndex = self.medIter[lbl]
+        medianModel = self.fittedmodels[lbl][middleIndex]
         if (write): # write actual predictions
             foldTrueLbl = medianModel[3]
             self.writePredictionsToFile(lbl, medianModel[1], foldTrueLbl)
         self.medIter[lbl] = middleIndex # toDo
         return medianModel[0]
     
-    def plotPrecisionRecall(self, lbl_list=[]):
+    def plotPrecisionRecall(self, lbl_list=[], legend=True):
         """
         Calculates the precision and recall for the provided 
         classifier (clf). 
@@ -315,13 +490,21 @@ class TextClassification(object):
             plt = matplotlib pyplot featuring the Precision Recall curve
                 of one classifier
         """
+        plt = self.plotSettings('PR')
+        plt.ylabel('Precision (PPV)')
+        plt.xlabel('Recall (TPR)')
         if lbl_list == []:
             lbl_list = list(self.d_conf.keys())
         if type(lbl_list) == list:
             for lbl in lbl_list:
-                plt = self.modelPrecisionRecall(lbl)
+                plt, aucs = self.modelPrecisionRecall(lbl)
+                self.d_auprcs[lbl] = aucs
         elif type(lbl_list) == str:
-            plt = self.modelPrecisionRecall(lbl_list)
+            plt, aucs = self.modelPrecisionRecall(lbl_list)
+            self.d_auprcs[lbl_list] = aucs
+        if legend :
+            plt.legend(loc = 'lower right')
+        plt.rcParams.update({'font.size': 55})
         return plt
     
     def assessPerformance(self, lbl, clf, iteration, X_test, y_test, proba=True):
@@ -336,13 +519,14 @@ class TextClassification(object):
             iteration = integer implying the current iteration of the 10 fold CV
             X_test = unlabeled test set
             y_test = labels of the test set
-            
+            cat = type/category of classifier: whether a classifier returns a hardcase label
+                or a probability or if it is a word matching method
         Output: 
             d_conf = dictionary with confusion matrix & other performance characteristics 
                 over the range of probabilities. 
         """
         recall_scale = np.linspace(0, 1, 100)
-        if (proba) :
+        if proba :
             probas_ = clf.predict_proba(X_test)
             pred = probas_[:,1]
         else :
@@ -491,12 +675,19 @@ class TextClassification(object):
         """
         d_conf = {}
         iteration = 0
+        proba = True
         self.fittedmodels[lbl] = {} # initialize entry
-        for train_index, test_index in self.preset_CV10Folds():
+        for train_index, test_index in self.splitData():
             fold = [test_index, train_index]
             Xtr, Xte = self.X[train_index], self.X[test_index]
-            estimator = clf.fit(Xtr, self.y[train_index])
-            d_conf[iteration] = self.assessPerformance(lbl, estimator, iteration, Xte, self.y[test_index], fold)
+            try :
+                estimator = clf.fit(Xtr, self.y[train_index])
+            except: 
+                if iteration == 0: 
+                    print(str(lbl), 'is assumed to be a word matching method and is therefore not fitted')
+                estimator = clf
+                proba = False
+            d_conf[iteration] = self.assessPerformance(lbl, estimator, iteration, Xte, self.y[test_index], proba)
             iteration += 1
         return d_conf
     
@@ -560,10 +751,34 @@ class TextClassification(object):
                 label=lbl + r' mean kfold (AUC = %0.2f $\pm$ %s)' % (mean_auc, std_auc),
                 alpha=.5, linestyle=linestyle, linewidth=lw)
             plt.fill_between(mean_fpr, tprs_lower, tprs_upper, color=color, alpha=.1)
-            return plt, std_auc
+            return plt #, std_auc
         else :
             return
-    
+        
+    def scoresCM(self, CM):
+        TN = CM[0][0]
+        FN = CM[1][0]
+        TP = CM[1][1]
+        FP = CM[0][1]
+        # Sensitivity, hit rate, recall, or true positive rate
+        TPR = TP/(TP+FN)
+        # Specificity or true negative rate
+        TNR = TN/(TN+FP) 
+        # Precision or positive predictive value
+        PPV = TP/(TP+FP)
+        # Negative predictive value
+        NPV = TN/(TN+FN)
+        # Fall out or false positive rate
+        FPR = FP/(FP+TN)
+        # False negative rate
+        FNR = FN/(TP+FN)
+        # False discovery rate
+        FDR = FP/(TP+FP)
+
+        # Overall accuracy
+        ACC = (TP+TN)/(TP+FP+FN+TN)
+        return [TPR, TNR, PPV, NPV, FPR, FNR, FDR, ACC]
+        
     def plot_confusion_matrix(self, lbl, desired, classes=[0,1],
                           normalize=False,
                           title=None,
@@ -581,7 +796,7 @@ class TextClassification(object):
             if normalize:
                 title = 'Normalized confusion matrix'
             else:
-                title = 'Confusion matrix, without normalization'
+                title = 'Confusion matrix'
 
         # Compute confusion matrix
         cm = confusion_matrix(y_true, y_pred)
@@ -589,12 +804,13 @@ class TextClassification(object):
         #classes = classes[unique_labels(y_true, y_pred)]
         if normalize:
             cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
-            print("Normalized confusion matrix")
-        else:
-            print('Confusion matrix, without normalization')
+        #    print("Normalized confusion matrix")
+        #else:
+        #    print('Confusion matrix')
 
-        print(cm)
-
+        cm_chars = self.scoresCM(cm)
+        print('NPV:\t' + str(cm_chars[3]) + '\nACC:\t' + str(cm_chars[7]))
+        
         fig, ax = plt.subplots()
         im = ax.imshow(cm, interpolation='nearest', cmap=cmap)
         ax.figure.colorbar(im, ax=ax)
