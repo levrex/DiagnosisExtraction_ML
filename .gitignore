@@ -1,9 +1,9 @@
 __pycache__/
 .ipynb_checkpoints/
-.nfs00000001f9ca5da6000210e9
-.nfs00000001f978a635000210e6
 data/
 corpus/
 DataPreparations.ipynb
 validation/
 research/
+Sandbox.ipynb
+Notebook_Diagnosis_Extraction-Custom.ipynb

@@ -14,6 +14,7 @@ import pattern.en as patEN
 from pyxdameraulevenshtein import normalized_damerau_levenshtein_distance_ndarray
 import re
 from scipy import stats, interp
+import seaborn as sns
 from sklearn.model_selection import learning_curve, ShuffleSplit
 from sklearn import metrics # 
 from sklearn.metrics import confusion_matrix, precision_recall_curve
@@ -154,6 +155,12 @@ class TextClassification(object):
         Retrieve current nr of iterations that is used for the fold creation
         """
         return self.iterations
+    
+    def getFittedModels(self):
+        """
+        Retrieve list with fitted models
+        """
+        return self.fittedmodels
         
     def assignPalette(self, palette=[]):
         l_lbls = self.names #[self.model_list[i]['clf'].__class__.__name__ for i in range(len(self.model_list))]
@@ -253,7 +260,7 @@ class TextClassification(object):
         plt.ylim([0, 1])
         #plt.rcParams.update({'font.size': 12})
         return plt
-    
+
     def plotROC(self, lbl_list=[], legend=True):
         """
         Calculates the specificity and sensitivity for the provided 
@@ -287,20 +294,21 @@ class TextClassification(object):
             plt.rcParams.update({'font.size': 55})
         return plt
     
-    def plotPR(self, l_prec, aucs, color, lbl, linestyle='-', lw=5, std=False):
+    def plotPR(self, l_prec, aucs, color, lbl, linestyle='-', lw=5, std=False, kfold=True):
         """
         Plot the precision recall curve by taking the
         mean of the k-folds. The standard deviation is also
-        calculated and plotted on the screen.
+        calculated, though not visualized.
 
         Input:
             l_prec = list of precision scores per iteration
-            l_rec = list of recall scores per iteration
             aucs = list of area under the curve per iteration
             color = color for line
             lbl = name of classifier
             linestyle = linestyle (matplotlib.pyplot)
             lw = linewidth
+            std = visualize the standard deviation (default=False)
+            kfold = calculate the standard deviation (default=True)
 
         Output:
             plt = Precision Recall curve with standard deviation 
@@ -316,10 +324,14 @@ class TextClassification(object):
             precision_upper = np.minimum(mean_precision + std_precision, 1)
             precision_lower = np.maximum(mean_precision - std_precision, 0)
             plt.fill_between(recall_scale, precision_lower, precision_upper, color=color, alpha=.1)
+        if kfold:
+            lbl += r' mean kfold (AUPRC = %.2f +/- %.2f)' % (mean_auc, std_auc)
+            print(lbl)
+        else : 
+            lbl += r' (AUPRC = %.2f)' % (mean_auc)
+            print(lbl + ' ' + str(mean_auc))
         plt.plot(recall_scale, mean_precision, color=color, alpha=0.6, 
-                 label=lbl + r' mean kfold (AUPRC = %0.2f $\pm$ %s)' % (mean_auc, std_auc),
-                 linestyle=linestyle, linewidth=lw)
-        print(lbl + ' ' + str(mean_auc) +' (std : +/-' + str(std_auc) + ' )')
+                 label=lbl, linestyle=linestyle, linewidth=lw)
         return plt
     
     def calculateAUC(self, x, y):
@@ -440,7 +452,7 @@ class TextClassification(object):
         try :
             middleIndex = self.medIter[lbl]
         except :
-            print('Retrieving fitted' + str(lbl) + '(default=Median Iteration)')
+            print('Retrieving fitted ' + str(lbl) + ' (default=Median Iteration)')
             self.modelPrecisionRecall(lbl, plot=False)
             middleIndex = self.medIter[lbl]
         medianModel = self.fittedmodels[lbl][middleIndex] 
@@ -448,7 +460,7 @@ class TextClassification(object):
         plt.scatter(x=medianModel[1], y=list(range(len(medianModel[1]))), c=foldTrueLbl, cmap='viridis')    
         return plt
     
-    def getTrainedClassifier(self, lbl, write=True):
+    def getTrainedClassifier(self, lbl, clf=True, write=True):
         """
         Required : fitted models
         
@@ -459,13 +471,19 @@ class TextClassification(object):
         
         Input 
             lbl = name of classifier
+            clf = boolean to specify wheter you want to return
+                only the fitted classifier or additional information 
+                (Useful if you want to replicate the learning process)
+                Like:
+                    - train_index (for recreating trainingsset)
+                    - test_index
         Output:
             medianModel = median iteration of classifier
         """
         try :
             middleIndex = self.medIter[lbl]
         except :
-            print('Retrieving fitted' + str(lbl) + '(default=Median Iteration)')
+            print('Retrieving fitted ' + str(lbl) + ' (default=Median Iteration)')
             self.modelPrecisionRecall(lbl, plot=False)
             middleIndex = self.medIter[lbl]
         medianModel = self.fittedmodels[lbl][middleIndex]
@@ -473,8 +491,11 @@ class TextClassification(object):
             foldTrueLbl = medianModel[3]
             self.writePredictionsToFile(lbl, medianModel[1], foldTrueLbl)
         self.medIter[lbl] = middleIndex # toDo
-        return medianModel[0]
-    
+        if clf:
+            return medianModel[0]
+        else :
+            return medianModel
+        
     def plotPrecisionRecall(self, lbl_list=[], legend=True):
         """
         Calculates the precision and recall for the provided 
@@ -576,8 +597,15 @@ class TextClassification(object):
     
     def confusion_window(self, l_true, l_pred):
         """
-        makes a record at every point it registers the confusion matrix
-        l_true and l_pred are sorted 
+        Makes a record at every data point in an array, which makes it
+        possible to retrieve a confusion matrix that corresponds with a certain 
+        threshold. 
+        
+        Input: 
+            Sorted l_true and l_pred lists that correspond with eachother
+            
+        Output:
+            d_conf = dictionary that stores measurements over the whole dataset
         """
         dummi = l_true
         dummi = [2 if x==0 else x for x in dummi]
@@ -714,9 +742,13 @@ class TextClassification(object):
                 thresh = self.d_conf[lbl][medIter]['threshold'][i]
                 fpr = self.d_conf[lbl][medIter]['fpr'][i]
                 prc = self.d_conf[lbl][medIter]['prc'][i]
-                tpr = self.d_conf[lbl][medIter]['tpr'][i]
-        print('Thresh: %.2f' % thresh, '\nPRC: \t%.2f' % prc, '\nSens: \t%.2f' % tpr, '\nSpec: \t%.2f' % float(1-fpr))
-        self.plot_confusion_matrix(lbl, thresh)
+                tpr = self.d_conf[lbl][medIter]['tpr'][i]  
+        try: 
+            print('Thresh: %.2f' % thresh, '\nPRC: \t%.2f' % prc, '\nSens: \t%.2f' % tpr, '\nSpec: \t%.2f' % float(1-fpr))
+            self.plot_confusion_matrix(lbl, thresh)
+        except: 
+            print('No situation found where %s > %.2f ' % (lbl, desired))
+        
     
     def plotSTD(self, tprs, aucs, color, lbl, linestyle='-', lw=5, vis=1):
         """
@@ -745,10 +777,10 @@ class TextClassification(object):
         std_tpr = np.std(tprs, axis=0)
         tprs_upper = np.minimum(mean_tpr + std_tpr, 1)
         tprs_lower = np.maximum(mean_tpr - std_tpr, 0)
-        print(lbl + ' ' + str(mean_auc) +' (std : +/-' + str(std_auc) + ' )')
+        print(lbl + ' ' + str(mean_auc) +' (std : +/-' + "%.2f" % std_auc + ' )')
         if vis==1:
             plt.plot(mean_fpr, mean_tpr, color=color,
-                label=lbl + r' mean kfold (AUC = %0.2f $\pm$ %s)' % (mean_auc, std_auc),
+                label=lbl + r' mean kfold (AUC = %.2f +/- %.2f)' % (mean_auc, std_auc),
                 alpha=.5, linestyle=linestyle, linewidth=lw)
             plt.fill_between(mean_fpr, tprs_lower, tprs_upper, color=color, alpha=.1)
             return plt #, std_auc
@@ -756,6 +788,9 @@ class TextClassification(object):
             return
         
     def scoresCM(self, CM):
+        """
+        Derive performance characteristics from the confusion matrix
+        """
         TN = CM[0][0]
         FN = CM[1][0]
         TP = CM[1][1]
@@ -837,3 +872,224 @@ class TextClassification(object):
                         color="white" if cm[i, j] > thresh else "black")
         fig.tight_layout()
         return ax
+    
+    def plotSwarm(self, lbl):
+        """
+        Required : fitted models
+        
+        This function creates a swarm plot based
+        on the median iteration of the provided classifier (lbl)
+        """
+        params = {'legend.fontsize': 10,
+          'figure.figsize': (8,6),
+          'axes.grid': False,
+         'axes.labelsize': 26,
+         'axes.titlesize':'xx-small',
+         'xtick.labelsize':22,
+          'axes.labelcolor' : 'k',
+          'ytick.color' : 'k',
+          'xtick.color': 'k',
+        'font.weight':'regular',
+         'ytick.labelsize':22}
+        plt.rcParams.update(params)
+        
+        try :
+            middleIndex = self.medIter[lbl]
+        except :
+            print('Retrieving fitted ' + str(lbl) + ' (default=Median Iteration)')
+            self.modelPrecisionRecall(lbl, plot=False)
+            middleIndex = self.medIter[lbl]
+        medianModel = self.fittedmodels[lbl][middleIndex] 
+        foldTrueLbl = medianModel[3]
+        df = pd.DataFrame(data={'Y': medianModel[1], 'X': foldTrueLbl})
+        ax = sns.swarmplot(x="X", y="Y", data=df)
+        plt.ylabel('Probability')
+        plt.xlabel('RA')
+        plt.title('Swarm plot ' + str(lbl))
+        return plt
+    
+    def samplingCurveROC(self, name, stepsize=0, cv=True):
+        """
+        This function calculates the ROC-curve AUC with differing sample 
+        sizes
+
+        Reminder - same K-folds as plotted in the ROC-curve
+
+        Input:
+            name = name of classifier (string)
+            stepsize = size of steps
+            cv = apply cross fold (warning: not suggested if training takes a long time)
+
+        Output:
+            plt = matplotlib pyplot featuring the Precision Recall curve
+                of one classifier
+            mean_auc = float of mean auc
+        """
+        model_id = self.names.index(name)
+        clf = self.model_list[model_id]
+        colors=['r', 'y', 'c', 'b', 'g', 'magenta', 'indigo', 'black', 'orange'] 
+        fpr_scale = np.linspace(0, 1, 100)
+        l_folds = [(train, test) for train, test in self.splitData()]
+        d_aucs = {}
+        
+        if stepsize == 0: # if not defined
+            stepsize = int(len(l_folds[0][0])/5)
+        
+        for i in range(stepsize, len(l_folds[0][0]), stepsize):
+            tprs = []
+            aucs = []
+            for train_ix, test_ix in l_folds:
+                df_test = pd.DataFrame(data={'IX': test_ix, 'Outcome': self.y[test_ix], 
+                                            'Text' : self.X[test_ix]})
+                df_train = pd.DataFrame(data={'IX': train_ix, 'Outcome': self.y[train_ix], 
+                                            'Text' : self.X[train_ix]})
+                
+                df_sub = df_train.sample(n=i, random_state=self.seed)
+                estimator = clf.fit(df_sub['Text'], df_sub['Outcome'])
+                probas_ = estimator.predict_proba(df_test['Text'])
+                fpr, tpr, thresholds = metrics.roc_curve(df_test['Outcome'], probas_[:, 1])
+                tprs.append(interp(fpr_scale, fpr, tpr))
+                tprs[-1][0] = 0.0
+                roc_auc = metrics.auc(fpr, tpr)
+                aucs.append(roc_auc)
+                if cv==False:
+                    break
+            plt = self.plotSTD(tprs, aucs, colors[int(i/stepsize)-1], 'n=' + str(i)) # , mean_auc
+            d_aucs['n=' + str(i)] = aucs
+        plt.rcParams.update({'font.size': 20})
+        plt.legend()
+        plt.title(name + ' ROC-curve for different sample sizes')
+        plt.figure(figsize=(14,10))
+        return plt, d_aucs
+    
+    def samplingCurvePR(self, name, stepsize=0, cv=True):
+        """
+        This function calculates the Precision Recall-curve AUC with 
+        differing sample sizes
+
+        Reminder - same K-folds as plotted in the ROC-curve
+
+        Input:
+            name = name of classifier (string)
+            stepsize = size of steps
+            cv = apply cross fold (warning: not suggested if training takes a long time)
+
+        Output:
+            plt = matplotlib pyplot featuring the Precision Recall curve
+                of one classifier
+            mean_auc = float of mean auc
+        """
+        model_id = self.names.index(name)
+        clf = self.model_list[model_id]
+        colors=['r', 'y', 'c', 'b', 'g', 'magenta', 'indigo', 'black', 'orange'] 
+        recall_scale = np.linspace(0, 1, 100)
+        l_folds = [(train, test) for train, test in self.splitData()]
+        d_aucs = {}
+        
+        if stepsize == 0: # if not defined
+            stepsize = int(len(l_folds[0][0])/5)
+        
+        for i in range(stepsize, len(l_folds[0][0]), stepsize):
+            l_prec = []
+            aucs = []
+            for train_ix, test_ix in l_folds:
+                df_test = pd.DataFrame(data={'IX': test_ix, 'Outcome': self.y[test_ix], 
+                                            'Text' : self.X[test_ix]})
+                df_train = pd.DataFrame(data={'IX': train_ix, 'Outcome': self.y[train_ix], 
+                                            'Text' : self.X[train_ix]})
+                
+                df_sub = df_train.sample(n=i, random_state=self.seed)
+                estimator = clf.fit(df_sub['Text'], df_sub['Outcome'])
+                probas_ = estimator.predict_proba(df_test['Text'])
+                prec, tpr, thresholds = precision_recall_curve(df_test['Outcome'], probas_[:, 1])
+                prec[0] = 0.0
+                inter_prec = interp(recall_scale, prec, tpr)
+                inter_prec[0] = 1.0 
+                l_prec.append(inter_prec)
+                auc = self.calculateAUC(recall_scale, inter_prec)
+                aucs.append(auc)
+                if cv==False:
+                    break
+            plt = self.plotPR(l_prec, aucs, colors[int(i/stepsize)-1], 'n=' + str(i))
+            d_aucs['n=' + str(i)] = aucs
+        plt.rcParams.update({'font.size': 20})
+        plt.legend()
+        plt.title(name + ' precision recall curve for different sample sizes')
+        plt.figure(figsize=(8,6))
+        return plt, d_aucs
+    
+    def plotPrevalencePR(self, name, cv=True, l_range_prev=[0.1, 0.25, 0.5, 0.75, 0.9]):
+        """
+        This function generates a precision recall curve and visualizes how 
+        the precision is affected by the prevalence in the dataset by asserting
+        a list with chosen prevalences (l_range_prev). This function doesn't 
+        require fitted models.
+
+        Depending on the fraction & the ratio of controls / cases, either the
+        negative cases or positive cases are reduce to achieve the desired ratio.
+
+        Important to note: Only the test set retains its initial prevalence.
+
+        Input:
+            name = name of classifier (string)
+            l_range_prev = list of different prevalence fractions that are 
+                measured.
+            cv = apply cross fold (warning: not suggested if training takes a long time)
+
+        Output:
+            plt = matplotlib pyplot featuring the Precision Recall curve
+                of one classifier
+        """
+        model_id = self.names.index(name)
+        clf = self.model_list[model_id]
+        colors=['r', 'y', 'c', 'b', 'g', 'magenta', 'indigo', 'black', 'orange'] 
+        recall_scale = np.linspace(0, 1, 100)
+        d_aucs = {}
+
+        l_folds = [(train, test) for train, test in self.splitData()]
+        counter = 0 
+        for pref_prev in l_range_prev:
+            tprs = []
+            aucs = []
+            for train_ix, test_ix in l_folds:
+                df_test = pd.DataFrame(data={'IX': test_ix, 'Outcome': self.y[test_ix], 
+                                'Text' : self.X[test_ix]})
+                df = pd.DataFrame(data={'IX': train_ix, 'Outcome': self.y[train_ix], 
+                                        'Text' : self.X[train_ix]})
+                sum_total = (len(df[df['Outcome']==1])+ len(df[df['Outcome']==0]))
+                prev_y = len(df[df['Outcome']==1])/sum_total
+                prev_n = len(df[df['Outcome']==0])/sum_total
+                pref_prev = pref_prev
+
+                if len(df[df['Outcome']==1])/sum_total < pref_prev:
+                    # REDUCE NEGATIVE CASES
+                    factor = (prev_y/prev_n)/ (pref_prev)
+                    y_neg = df[df['Outcome']==0].sample(n=round((len(df[df['Outcome']==0])*factor)*(1-pref_prev)), random_state=self.seed)
+                    y_pos = df[df['Outcome']==1].sample(frac=1, random_state=self.seed)
+                else: 
+                    # REDUCE POSITIVE CASES
+                    factor = (pref_prev/prev_n)/ (prev_y)
+                    y_pos = df[df['Outcome']==1].sample(n=round((len(df[df['Outcome']==1])*factor)*(1-pref_prev)), random_state=self.seed)
+                    y_neg = df[df['Outcome']==0].sample(frac=1, random_state=self.seed)
+                
+                df_sub = pd.concat([y_pos, y_neg])
+                df_sub = df_sub.sample(frac=1, random_state=self.seed) # shuffle
+                estimator = clf.fit(df_sub['Text'], df_sub['Outcome'])
+                probas_ = estimator.predict_proba(df_test['Text'])
+
+                prec, tpr, thresholds = precision_recall_curve(df_test['Outcome'], probas_[:, 1])
+                prec[0] = 0.0
+                inter_prec = interp(recall_scale, prec, tpr)
+                inter_prec[0] = 1.0 
+                tprs.append(inter_prec)
+                auc = self.calculateAUC(recall_scale, inter_prec)
+                aucs.append(auc)
+            d_aucs[str(pref_prev*100)] = aucs
+            print('Prevalence (last iter):', len(y_pos) / (len(y_pos) + len(y_neg) ))
+            plt = self.plotPR(tprs, aucs, colors[counter], str(pref_prev*100) + '% cases')
+            counter += 1
+        plt.rcParams.update({'font.size': 20})
+        plt.legend()
+        plt.title(name + ' performance on different proportions')
+        plt.figure(figsize=(6,6))
+        return plt, d_aucs

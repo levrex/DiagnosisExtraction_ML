@@ -9,3 +9,5 @@ kpss-py3==0.1
 xgboost==0.90
 ipykernel==5.1.2
 pyxDamerauLevenshtein==1.5.3
+seaborn==0.9.0
+pickle==4.0
