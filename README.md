@@ -2,7 +2,7 @@
 Pipeline for building Machine Learning Classifiers tasked with extracting the RA diagnosis based on EHR data (Natural Language). 
 
 ## Installation
-Prerequisite: conda environment (with jupyter notebook)
+Prerequisite: [conda](https://docs.conda.io/projects/conda/en/latest/user-guide/install/index.html) environment (with jupyter notebook)
 
 #### Option 1: pip
 Before running, please install the dependencies:
