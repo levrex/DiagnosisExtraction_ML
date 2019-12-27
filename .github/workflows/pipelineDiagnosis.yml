@@ -32,4 +32,4 @@ jobs:
     - name: Test with pytest
       run: |
         pip install pytest
-        pytest -vs DiagnosisExtraction_ML/.github/tests/simpleTest.py
+        pytest -vs .github/tests/simpleTest.py
