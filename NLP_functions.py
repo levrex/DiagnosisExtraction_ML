@@ -842,3 +842,53 @@ def sampleSizePR(clf, X, y, size, lbl, color):
     plt.rcParams.update({'font.size': 20})
     plt.legend()
     return plt, aucs
+
+def entriesPatientMerge(pat_df, id_column, X_column, y_column=""):
+    """
+    Merges the entries into one entry per patient (according to the id_column)
+    
+    In other words, 
+    This function merges all text (X_column) on the id_column (patient id)
+    
+    Input: 
+        id_column = string indicating column with patient id
+        X_column = string indicating column with free text field
+        y_column = string indicating column with label (if it exists)
+        
+    Output: 
+        dictionary with compressed data (1 row with all patient info)
+    """
+    field = ''
+    for i in pat_df[X_column]:
+        field += " " + i + " "
+    if y_column!="":
+        return {X_column: field, id_column : pat_df[id_column].iloc[0], y_column : pat_df[y_column].iloc[0]}
+    else :
+        return {X_column: field, id_column : pat_df[id_column].iloc[0]}
+
+def mergeOnColumn(df, id_column, X_column, y_column=""):
+    """
+    This function creates a new dataframe, where all entries of an individual
+    patient are merged into one row. Resulting in a patient based table.
+    
+    Input:
+        df = entry based dataframe (multiple entries per patient)
+        id_column = string indicating column with patient id
+        X_column = string indicating column with free text field 
+        y_column = string indicating column with label (if it exists)
+        
+    Ouput:
+        df_ult = patient based dataframe (one summary per patient)
+    """
+    if y_column != "":
+        df_ult = pd.DataFrame(columns=[X_column,  id_column, y_column])
+    else : 
+        df_ult = pd.DataFrame(columns=[X_column,  id_column])
+
+    for pat in df[id_column].unique():
+        pat_df = df[df[id_column]==pat]
+        if y_column != "":
+            df_ult = df_ult.append(entriesPatientMerge(pat_df, id_column, X_column, y_column), ignore_index=True)
+        else : 
+            df_ult = df_ult.append(entriesPatientMerge(pat_df, id_column, X_column), ignore_index=True)
+    return df_ult

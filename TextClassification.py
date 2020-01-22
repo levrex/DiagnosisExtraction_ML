@@ -5,6 +5,7 @@ import collections
 from collections import Counter
 from inspect import signature
 import kpss_py3 as kps
+import math
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -110,6 +111,13 @@ class TextClassification(object):
         self.palette = ['r', 'y', 'c', 'b', 'g', 'magenta', 'indigo', 'black', 'orange'] 
         self.output_path = r'output_files/'
         self.colors = {}
+        self.ref = ''
+    
+    def setREF(self, ref):
+        self.ref = ref
+    
+    def getREF(self):
+        return self.ref
     
     def getAUC(self):
         return self.d_aucs
@@ -314,6 +322,8 @@ class TextClassification(object):
             plt = Precision Recall curve with standard deviation 
                 (matplotlib.pyplot)
         """
+        if lbl == self.ref:
+            linestyle = '--'
         mean_precision = [*map(mean, zip(*l_prec))]
         mean_precision[-1] = 0.0
         recall_scale = np.linspace(0, 1, 100)
@@ -767,6 +777,8 @@ class TextClassification(object):
                 deviation of the ROC curve from the classifier
             std_auc = standard deviation of the auc (float)
         """
+        if lbl == self.ref:
+            linestyle = '--'
         mean_fpr = np.linspace(0, 1, 100)
         mean_tpr = np.mean(tprs, axis=0)
         mean_tpr [-1] = 1.0
@@ -782,7 +794,7 @@ class TextClassification(object):
             plt.plot(mean_fpr, mean_tpr, color=color,
                 label=lbl + r' mean kfold (AUC = %.2f +/- %.2f)' % (mean_auc, std_auc),
                 alpha=.5, linestyle=linestyle, linewidth=lw)
-            plt.fill_between(mean_fpr, tprs_lower, tprs_upper, color=color, alpha=.1)
+            #plt.fill_between(mean_fpr, tprs_lower, tprs_upper, color=color, alpha=.1)
             return plt #, std_auc
         else :
             return
@@ -945,6 +957,8 @@ class TextClassification(object):
                                             'Text' : self.X[train_ix]})
                 
                 df_sub = df_train.sample(n=i, random_state=self.seed)
+                # Assess wheter or not the entries from the smaller sample (within the same fold) are conserved
+                # print('HEAD:', list(df_sub['IX'].head()), len(df_sub), 'TAIL:', list(df_sub['IX'].tail())) 
                 estimator = clf.fit(df_sub['Text'], df_sub['Outcome'])
                 probas_ = estimator.predict_proba(df_test['Text'])
                 fpr, tpr, thresholds = metrics.roc_curve(df_test['Outcome'], probas_[:, 1])
@@ -956,6 +970,24 @@ class TextClassification(object):
                     break
             plt = self.plotSTD(tprs, aucs, colors[int(i/stepsize)-1], 'n=' + str(i)) # , mean_auc
             d_aucs['n=' + str(i)] = aucs
+        
+        # Also for final sample size
+        tprs = []
+        aucs = []
+        for train_ix, test_ix in l_folds:
+            estimator = clf.fit(self.X[train_ix], self.y[train_ix])
+            probas_ = estimator.predict_proba(self.X[test_ix])
+            fpr, tpr, thresholds = metrics.roc_curve(self.y[test_ix], probas_[:, 1])
+            tprs.append(interp(fpr_scale, fpr, tpr))
+            tprs[-1][0] = 0.0
+            roc_auc = metrics.auc(fpr, tpr)
+            aucs.append(roc_auc)
+            if cv==False:
+                break
+        plt = self.plotSTD(tprs, aucs, colors[int(i/stepsize)], 'n=' + str(len(l_folds[0][0]))) # , mean_auc
+        d_aucs['n=' + str(len(l_folds[0][0]))] = aucs
+        
+        
         plt.rcParams.update({'font.size': 20})
         plt.legend()
         plt.title(name + ' ROC-curve for different sample sizes')
@@ -997,8 +1029,8 @@ class TextClassification(object):
                                             'Text' : self.X[test_ix]})
                 df_train = pd.DataFrame(data={'IX': train_ix, 'Outcome': self.y[train_ix], 
                                             'Text' : self.X[train_ix]})
-                
                 df_sub = df_train.sample(n=i, random_state=self.seed)
+                # print('HEAD:', list(df_sub['IX'].head()), len(df_sub), 'TAIL:', list(df_sub['IX'].tail()))
                 estimator = clf.fit(df_sub['Text'], df_sub['Outcome'])
                 probas_ = estimator.predict_proba(df_test['Text'])
                 prec, tpr, thresholds = precision_recall_curve(df_test['Outcome'], probas_[:, 1])
@@ -1012,6 +1044,25 @@ class TextClassification(object):
                     break
             plt = self.plotPR(l_prec, aucs, colors[int(i/stepsize)-1], 'n=' + str(i))
             d_aucs['n=' + str(i)] = aucs
+        
+        # Also for final sample size
+        l_prec = []
+        aucs = []
+        for train_ix, test_ix in l_folds:
+            estimator = clf.fit(self.X[train_ix], self.y[train_ix])
+            probas_ = estimator.predict_proba(self.X[test_ix])
+            prec, tpr, thresholds = precision_recall_curve(self.y[test_ix], probas_[:, 1])
+            prec[0] = 0.0
+            inter_prec = interp(recall_scale, prec, tpr)
+            inter_prec[0] = 1.0 
+            l_prec.append(inter_prec)
+            auc = self.calculateAUC(recall_scale, inter_prec)
+            aucs.append(auc)
+            if cv==False:
+                break
+        plt = self.plotPR(l_prec, aucs, colors[int(i/stepsize)], 'n=' + str(len(l_folds[0][0]))) # , mean_auc
+        d_aucs['n=' + str(len(l_folds[0][0]))] = aucs
+        
         plt.rcParams.update({'font.size': 20})
         plt.legend()
         plt.title(name + ' precision recall curve for different sample sizes')
@@ -1048,6 +1099,11 @@ class TextClassification(object):
 
         l_folds = [(train, test) for train, test in self.splitData()]
         counter = 0 
+        
+        df = pd.DataFrame(data={'IX': l_folds[0][0], 'Outcome': self.y[l_folds[0][0]], 
+                                        'Text' : self.X[l_folds[0][0]]})
+        l_range_prev.append(len(df[df['Outcome']==1])/(len(df[df['Outcome']==1])+ len(df[df['Outcome']==0])))
+        
         for pref_prev in l_range_prev:
             tprs = []
             aucs = []
@@ -1064,14 +1120,17 @@ class TextClassification(object):
                 if len(df[df['Outcome']==1])/sum_total < pref_prev:
                     # REDUCE NEGATIVE CASES
                     factor = (prev_y/prev_n)/ (pref_prev)
-                    y_neg = df[df['Outcome']==0].sample(n=round((len(df[df['Outcome']==0])*factor)*(1-pref_prev)), random_state=self.seed)
+                    y_neg = df[df['Outcome']==0].sample(n=math.trunc((len(df[df['Outcome']==0])*factor)*(1-pref_prev)), random_state=self.seed)
                     y_pos = df[df['Outcome']==1].sample(frac=1, random_state=self.seed)
-                else: 
+                elif len(df[df['Outcome']==1])/sum_total > pref_prev: 
                     # REDUCE POSITIVE CASES
                     factor = (pref_prev/prev_n)/ (prev_y)
-                    y_pos = df[df['Outcome']==1].sample(n=round((len(df[df['Outcome']==1])*factor)*(1-pref_prev)), random_state=self.seed)
+                    y_pos = df[df['Outcome']==1].sample(n=math.trunc((len(df[df['Outcome']==1])*factor)*(1-pref_prev)), random_state=self.seed)
                     y_neg = df[df['Outcome']==0].sample(frac=1, random_state=self.seed)
-                
+                else : 
+                    # remain the same - default
+                    y_pos = df[df['Outcome']==1]
+                    y_neg = df[df['Outcome']==0]
                 df_sub = pd.concat([y_pos, y_neg])
                 df_sub = df_sub.sample(frac=1, random_state=self.seed) # shuffle
                 estimator = clf.fit(df_sub['Text'], df_sub['Outcome'])
