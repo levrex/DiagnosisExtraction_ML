@@ -54,5 +54,5 @@ Which will start a notebook session in the browser from which you can open the p
 [Notebook Diagnosis](Notebook_Diagnosis_Extraction.ipynb) 
 
 ## Pipeline
-![alt text](https://github.com/levrex/DiagnosisExtraction_ML/figures/md/PipelineDiagnosisPrediction.png "Pipeline ML-Prediction RA diagnosis")
+![alt text](https://github.com/levrex/DiagnosisExtraction_ML/blob/master/figures/md/PipelineDiagnosisPrediction.png "Pipeline ML-Prediction RA diagnosis")
 Pipeline displaying the general workflow, where the green sections are performed automatically and the blue parts require manual evaluation. A simple annotation (binary Yes or No) will suffice, thus reducing the mental load of the physician.
