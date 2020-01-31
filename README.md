@@ -4,14 +4,39 @@ Pipeline for building Machine Learning Classifiers tasked with extracting the RA
 ## Installation
 Prerequisite: [conda](https://docs.conda.io/projects/conda/en/latest/user-guide/install/index.html) environment (with jupyter notebook)
 
-#### Option 1: pip
-Before running, please install the dependencies:
+Install Jupyter Notebook:
+```sh
+$ conda install -c anaconda notebook
+```
+### Importing required modules
+Before running, please install the dependencies
+
+#### Option 1: Create environment with conda (YML)
+prerequisite: conda3
+
+```sh
+$ conda env create -f ml_env.yml
+$ conda activate ml_env
+```
+
+Create kernel:
+```sh
+$ ipython kernel install --user --name diagnosis_ra
+```
+
+Deactivate environment:
+```sh
+$ conda deactivate
+```
+
+#### Option 2: pip
+prerequisite: pip
 
 ```sh
 $ pip install -r requirements.txt
 ```
 
-#### Option 2: create custom kernel with conda
+#### Option 3: create custom kernel with conda (Bash script)
 prerequisite: conda3
 
 ```sh
@@ -27,3 +52,7 @@ $ notebook
 
 Which will start a notebook session in the browser from which you can open the pipeline file: 
 [Notebook Diagnosis](Notebook_Diagnosis_Extraction.ipynb) 
+
+## Pipeline
+![alt text](https://github.com/levrex/DiagnosisExtraction_ML/figures/md/PipelineDiagnosisPrediction.png "Pipeline ML-Prediction RA diagnosis")
+Pipeline displaying the general workflow, where the green sections are performed automatically and the blue parts require manual evaluation. A simple annotation (binary Yes or No) will suffice, thus reducing the mental load of the physician.
