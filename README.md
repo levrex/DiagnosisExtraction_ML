@@ -2,14 +2,20 @@
 Pipeline for building Machine Learning Classifiers tasked with extracting the RA diagnosis based on EHR data (Natural Language). 
 
 ## Installation
-Prerequisite: [conda](https://docs.conda.io/projects/conda/en/latest/user-guide/install/index.html) environment (with jupyter notebook)
+
+#### Linux systems:
+Prerequisite: [conda](https://docs.conda.io/projects/conda/en/latest/user-guide/install/index.html) environment (with jupyter notebook). Use the linux terminal to run the commands mentioned below.
 
 Install Jupyter Notebook:
 ```sh
 $ conda install -c anaconda notebook
 ```
+
+#### Windows systems:
+Prerequisite: Install [Anaconda](https://www.anaconda.com/distribution/) with python version 3.5+. This additionally installs the Anaconda Prompt, which you can find in the windows search bar. Use this Anaconda prompt to run the commands mentioned below.
+
 ### Importing required modules
-Before running, please install the dependencies
+Before running, please install the dependencies. 
 
 #### Option 1: Create environment with conda (YML)
 prerequisite: conda3
