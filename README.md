@@ -1,5 +1,5 @@
 # DiagnosisExtraction_ML
-Pipeline for building Machine Learning Classifiers tasked with extracting the RA diagnosis based on EHR data (Natural Language). 
+Pipeline for building Machine Learning Classifiers tasked with extracting the RA diagnosis based on EHR data (Natural Language). This repository works with Python 3.6.
 
 ## Installation
 
