@@ -14,7 +14,7 @@ import pandas as pd
 import pattern.nl as patNL
 import pattern.de as patDE
 import pattern.en as patEN
-#from pyxdameraulevenshtein import normalized_damerau_levenshtein_distance_ndarray
+from pyxdameraulevenshtein import normalized_damerau_levenshtein_distance_ndarray
 import re
 from scipy import stats, interp
 from sklearn.model_selection import learning_curve, ShuffleSplit
