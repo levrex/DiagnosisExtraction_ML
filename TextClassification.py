@@ -1277,30 +1277,30 @@ class TextClassification(object):
         plt.xticks(np.arange(1, 1 + len(top_coefficients)), feature_names[top_coefficients], rotation=60, ha='right')
         plt.show()
         
-    def plot_feature_importance(self, name):
-        model, middleIndex = self.retrievingMedianModel(name)
-        feature_importance = model.feature_importances_
-        sorted_idx = np.argsort(feature_importance)[-top_features:]
-        pos = np.arange(sorted_idx.shape[0]) + .5
-        fig = plt.figure(figsize=(12, 6))
-        plt.subplot(1, 2, 1)
-        
-        l_folds = [(train, test) for train, test in self.splitData()]
-        data = self.X[l_folds[middleIndex][0]]
-        
-        plt.barh(pos, feature_importance[sorted_idx], align='center')
-        plt.yticks(pos, np.array(data.feature_names)[sorted_idx])
-        plt.title('Feature Importance (MDI)')
-
-        result = permutation_importance(model, self.X, self.y, n_repeats=10,
-                                        random_state=42, n_jobs=2)
-        sorted_idx = result.importances_mean.argsort()
-        plt.subplot(1, 2, 2)
-        plt.boxplot(result.importances[sorted_idx].T,
-                    vert=False, labels=np.array(data.feature_names)[sorted_idx])
-        plt.title("Permutation Importance (test set)")
-        fig.tight_layout()
-        plt.show()
+    #def plot_feature_importance(self, name):
+    #    model, middleIndex = self.retrievingMedianModel(name)
+    #    feature_importance = model.feature_importances_
+    #    sorted_idx = np.argsort(feature_importance)[-top_features:]
+    #    pos = np.arange(sorted_idx.shape[0]) + .5
+    #    fig = plt.figure(figsize=(12, 6))
+    #    plt.subplot(1, 2, 1)
+    #    
+    #    l_folds = [(train, test) for train, test in self.splitData()]
+    #    data = self.X[l_folds[middleIndex][0]]
+    #    
+    #    plt.barh(pos, feature_importance[sorted_idx], align='center')
+    #    plt.yticks(pos, np.array(data.feature_names)[sorted_idx])
+    #    plt.title('Feature Importance (MDI)')
+    #
+    #    result = permutation_importance(model, self.X, self.y, n_repeats=10,
+    #                                    random_state=42, n_jobs=2)
+    #    sorted_idx = result.importances_mean.argsort()
+    #    plt.subplot(1, 2, 2)
+    #    plt.boxplot(result.importances[sorted_idx].T,
+    #                vert=False, labels=np.array(data.feature_names)[sorted_idx])
+    #    plt.title("Permutation Importance (test set)")
+    #    fig.tight_layout()
+    #    plt.show()
         
     def plotF1scores(self):
         """
