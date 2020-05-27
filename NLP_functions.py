@@ -14,7 +14,7 @@ import pandas as pd
 import pattern.nl as patNL
 import pattern.de as patDE
 import pattern.en as patEN
-from pyxdameraulevenshtein import normalized_damerau_levenshtein_distance_ndarray
+#from pyxdameraulevenshtein import normalized_damerau_levenshtein_distance_ndarray
 import re
 from scipy import stats, interp
 from sklearn.model_selection import learning_curve, ShuffleSplit
@@ -26,7 +26,8 @@ from sklearn import tree
 from statistics import mean
 import unicodedata
 from yellowbrick.target import FeatureCorrelation
-from yellowbrick.features.importances import FeatureImportances
+#from yellowbrick.features.importances import FeatureImportances # YELLOWBRICK 0.09
+from yellowbrick.model_selection import FeatureImportances
 from yellowbrick.text import DispersionPlot
 from sklearn.feature_selection import chi2
 from sklearn.metrics import precision_recall_curve
@@ -553,6 +554,7 @@ def plotLexicalDispersion(X, nr_features=20, **kwargs):
                 characters!
         kwargs = arguments for feature vectorizer (TfidfVectorizer):
             ngram_range = specifies the range of the ngram features
+            stop_words = list of stopwords (e.g. in, over)
     """
     count = 0
     d = {}
@@ -567,7 +569,10 @@ def plotLexicalDispersion(X, nr_features=20, **kwargs):
             words.append([i for i in x.split(' ')])
         count+=1
     d = np.array(words)
-    count_vect = TfidfVectorizer(ngram_range=kwargs['ngram_range'])
+    if 'stop_words' in kwargs:
+        count_vect = TfidfVectorizer(ngram_range=kwargs['ngram_range'], stop_words = kwargs['stop_words'])
+    else :
+        count_vect = TfidfVectorizer(ngram_range=kwargs['ngram_range'])
     
     X_train_tfidf = count_vect.fit_transform(X) 
     X_pd = pd.DataFrame(X_train_tfidf.toarray(), columns=count_vect.get_feature_names())
@@ -579,7 +584,9 @@ def plotLexicalDispersion(X, nr_features=20, **kwargs):
     visualizer.poof()
     return
 
-def plotSampleDistribution(X, nr_features=50):
+from itertools import compress 
+
+def plotSampleDistribution(X, nr_features=50, stop_words = ['in']):
     """
     Draws a distribution of the top N words of any set (barchart)
     
@@ -590,7 +597,10 @@ def plotSampleDistribution(X, nr_features=50):
         plt = matplotlib.pyplot of the top n features 
     """
     words_to_count = [word.split(' ') for word in X]
+    bool_list = [(item not in stop_words) for entry in words_to_count for item in entry]
     words_to_count = [item for entry in words_to_count for item in entry]
+    words_to_count = list(compress(words_to_count, bool_list)) 
+    
     counts = Counter(words_to_count) 
 
     labels =[ counts.most_common(nr_features)[x][0] for x in range(nr_features) ]
