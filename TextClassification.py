@@ -1302,12 +1302,19 @@ class TextClassification(object):
     #    fig.tight_layout()
     #    plt.show()
         
-    def plotF1scores(self):
+    def plotF1scores(self, debug=False):
         """
         Plot mean F1-scores for the 10 fold cross validation with error (std) bars
+        
+        Input:
+            debug = print actual results
         """       
         x_pos, l_mean, l_std = self.calculateF1()
         lbls = list(self.d_f1.keys())
+        
+        if debug:
+            for x in range(len(lbls)):
+                print(lbls[x], ':', '%.2f+/-%.2f' % (l_mean[x], l_std[x]))
         
         # Build the plot
         plt.figure(figsize=(14,14))
