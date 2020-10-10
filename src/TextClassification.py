@@ -4,7 +4,7 @@ Keep in mind: this class is a work in progress. Use the buildingAClassifier scri
 import collections
 from collections import Counter
 from inspect import signature
-import kpss_py3 as kps
+#import kpss_py3 as kps
 import math
 import matplotlib.pyplot as plt
 import numpy as np
@@ -16,7 +16,7 @@ import pattern.en as patEN
 import re
 from scipy import stats, interp, sparse
 import seaborn as sns
-from sklearn.model_selection import learning_curve, ShuffleSplit
+from sklearn.model_selection import ShuffleSplit, StratifiedKFold
 from sklearn import metrics # 
 from sklearn.metrics import confusion_matrix, precision_recall_curve
 from sklearn.pipeline import Pipeline
