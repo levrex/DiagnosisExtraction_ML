@@ -9,10 +9,6 @@ import math
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import pattern.nl as patNL
-import pattern.de as patDE
-import pattern.en as patEN
-#from pyxdameraulevenshtein import normalized_damerau_levenshtein_distance_ndarray
 import re
 from scipy import stats, interp, sparse
 import seaborn as sns
@@ -99,11 +95,10 @@ class TextClassification(object):
         self.X = X
         self.y = y
         self.seed = seed
-        self.iterations = 10
+        self.rounds = 1
+        self.folds = 10 # default = 10 CV
         self.test_size = test_frac
         self.names = names
-        #self.k_folds = preset_CV10Folds(X)
-        # of median iteration
         self.fittedmodels = {}
         self.d_conf = {}
         self.d_aucs = {}
@@ -169,17 +164,29 @@ class TextClassification(object):
         """
         return self.seed
     
-    def setIterations(self, iterations):
+    def setFolds(self, folds):
         """
-        Update nr of iterations with the provided user input
+        Update nr of folds with the provided user input
         """
-        self.iterations = iterations
+        self.folds = folds 
+        
+    def getFolds(self):
+        """
+        Retrieve current nr of folds that is used for the fold creation
+        """
+        return self.folds
+    
+    def setRounds(self, rounds):
+        """
+        Update nr of rounds with the provided user input
+        """
+        self.rounds = rounds
 
-    def getIterations(self):
+    def getRounds(self):
         """
-        Retrieve current nr of iterations that is used for the fold creation
+        Retrieve current nr of rounds that is used for the fold creation
         """
-        return self.iterations
+        return self.rounds
     
     def getFittedModels(self):
         """
@@ -197,15 +204,17 @@ class TextClassification(object):
         
     def splitData(self):
         """
-        Split the dataset randomly n-times (defined by self.iterations) for k-fold
+        Split the dataset randomly n-times (defined by self.rounds) for k-fold
         cross validation. The size of the test_size is defined by self.test_size. 
         
         Output:
             l_folds = list containing the indices for the train/test
                 entries, required to contstruct the k-folds.
         """
-        ss = ShuffleSplit(n_splits=self.iterations, test_size=self.test_size, random_state=self.seed)
-        l_folds = ss.split(self.X)
+        l_folds = []
+        for i in range(self.rounds): 
+            ss = StratifiedKFold(n_splits=self.folds, shuffle=True, random_state=self.seed+i)
+            l_folds.extend(ss.split(self.X, self.y))
         return l_folds
     
     def binarizeLabel(self, l, true_label='y'):
@@ -222,7 +231,7 @@ class TextClassification(object):
         d_conf = {}
         iterat = 0
         print('\nGeneral settings for training/testing:')
-        print('Method = Cross Validation ' + str(self.iterations) + '-fold')
+        print('Method = Cross Validation ' + (str(self.rounds) + 'x')*(self.rounds!=1)  + str(self.folds) + '-fold')
         print('\tfraction test:\t', self.test_size, '\n')
         for clf in range(len(self.model_list)):
             lbl = self.names[iterat]
@@ -393,7 +402,7 @@ class TextClassification(object):
         l_roc, aucs, l_f1 = [], [], []
         fpr_scale = np.linspace(0, 1, 100)
         tprs = []
-        for x in range(len(self.d_conf[lbl])): # loop through iterations
+        for x in range(len(self.d_conf[lbl])): # loop through rounds
             #scores = self.scores(lbl, x)
             tpr, fpr = self.d_conf[lbl][x]['tpr'], self.d_conf[lbl][x]['fpr']#scores[1], scores[3]
             tprs.append(interp(fpr_scale, fpr, tpr))
@@ -436,7 +445,7 @@ class TextClassification(object):
         """
         l_prec, aucs, l_f1 = [], [], []
         recall_scale = np.linspace(0, 1, 100)
-        for x in range(len(self.d_conf[lbl])): # loop through iterations
+        for x in range(len(self.d_conf[lbl])): # loop through rounds
             tpr, prec = self.d_conf[lbl][x]['tpr'], self.d_conf[lbl][x]['prc']
             prec[0] = 0.0
             inter_prec = interp(recall_scale, tpr, prec)
@@ -1277,32 +1286,7 @@ class TextClassification(object):
         plt.xticks(np.arange(1, 1 + len(top_coefficients)), feature_names[top_coefficients], rotation=60, ha='right')
         plt.show()
         
-    #def plot_feature_importance(self, name):
-    #    model, middleIndex = self.retrievingMedianModel(name)
-    #    feature_importance = model.feature_importances_
-    #    sorted_idx = np.argsort(feature_importance)[-top_features:]
-    #    pos = np.arange(sorted_idx.shape[0]) + .5
-    #    fig = plt.figure(figsize=(12, 6))
-    #    plt.subplot(1, 2, 1)
-    #    
-    #    l_folds = [(train, test) for train, test in self.splitData()]
-    #    data = self.X[l_folds[middleIndex][0]]
-    #    
-    #    plt.barh(pos, feature_importance[sorted_idx], align='center')
-    #    plt.yticks(pos, np.array(data.feature_names)[sorted_idx])
-    #    plt.title('Feature Importance (MDI)')
-    #
-    #    result = permutation_importance(model, self.X, self.y, n_repeats=10,
-    #                                    random_state=42, n_jobs=2)
-    #    sorted_idx = result.importances_mean.argsort()
-    #    plt.subplot(1, 2, 2)
-    #    plt.boxplot(result.importances[sorted_idx].T,
-    #                vert=False, labels=np.array(data.feature_names)[sorted_idx])
-    #    plt.title("Permutation Importance (test set)")
-    #    fig.tight_layout()
-    #    plt.show()
-        
-    def plotF1scores(self, debug=False):
+    def plotF1scores(self, lbls=[], debug=False):
         """
         Plot mean F1-scores for the 10 fold cross validation with error (std) bars
         
@@ -1310,16 +1294,65 @@ class TextClassification(object):
             debug = print actual results
         """       
         x_pos, l_mean, l_std = self.calculateF1()
-        lbls = list(self.d_f1.keys())
+        
+        if lbls == []:
+            lbls = list(self.d_f1.keys())# + '\n' +
         
         if debug:
             for x in range(len(lbls)):
                 print(lbls[x], ':', '%.2f+/-%.2f' % (l_mean[x], l_std[x]))
         
+        my_colors = []
+        for x in range(len(lbls)):
+            if my_colors == self.ref:
+                my_colors.append('blue')
+            else:
+                my_colors.append('b')
         # Build the plot
         plt.figure(figsize=(14,14))
         fig, ax = plt.subplots()
-        ax.bar(x_pos, l_mean, yerr=l_std, align='center', alpha=0.5, ecolor='black', capsize=10)
+        ax.bar(x_pos, l_mean, yerr=l_std, align='center', alpha=0.5, ecolor='black', color=my_colors, capsize=10)
+        #barlist=plt.bar([1,2,3,4], [1,2,3,4])
+        #barlist[0].set_color('r')
+        ax.set_ylabel('F1-score +/- std')
+        ax.set_xticks(x_pos)
+        ax.tick_params(axis='both', which='major', labelsize=9)
+        ax.set_xticklabels(lbls, rotation=45)
+        ax.set_title('Barplot with F1-score for the different classifiers')
+        ax.yaxis.grid(True)
+
+        # Save the figure and show
+        plt.tight_layout()
+        plt.savefig('figures/results/Bar_plot_f1.png')
+        plt.show()
+        
+    def plotF1scores(self, lbls=[], debug=False):
+        """
+        Plot mean F1-scores for the 10 fold cross validation with error (std) bars
+        
+        Input:
+            debug = print actual results
+        """       
+        x_pos, l_mean, l_std = self.calculateF1()
+        
+        if lbls != []:
+            lbls = list(self.d_f1.keys())# + '\n' +
+        
+        if debug:
+            for x in range(len(lbls)):
+                print(lbls[x], ':', '%.2f+/-%.2f' % (l_mean[x], l_std[x]))
+        
+        my_colors = []
+        for x in range(len(lbls)):
+            if lbls[x] == self.ref:
+                my_colors.append('blue')
+            else:
+                my_colors.append('b')
+
+        # Build the plot
+        plt.figure(figsize=(14,14))
+        fig, ax = plt.subplots()
+        ax.bar(x_pos, l_mean, yerr=l_std, align='center', alpha=0.5, ecolor='black', color=my_colors, capsize=10)
         ax.set_ylabel('F1-score +/- std')
         ax.set_xticks(x_pos)
         ax.tick_params(axis='both', which='major', labelsize=9)
@@ -1425,118 +1458,52 @@ class TextClassification(object):
         plt.legend()
         plt.title(name + ' performance on different proportions')
         return plt, d_aucs
-        
-    def pval_5x2CV(self, pr=False, verbose=False):
-        """
-        Calculate the 5x2 CV p-values for each ML vs the REF
-        
-        Input:
-            pr = boolean to calculate precision recall 
-        """
-        model_id = self.names.index(self.ref)
-        ref = self.model_list[model_id]
-        d_perf = {}
-        print(ref)
-        for ix, cand in enumerate(self.model_list):
-            models = [ref, cand]
-            names = [self.ref, self.names[ix]]
-            if cand != ref:
-                t_stat, p = self.pairwise_5x2CV(models, names, pr=pr, verbose=verbose)
-                #print('%s (p=%6.4f, t-statistic = %6.3f)' % (self.names[ix], p, t_stat))
-                d_perf[self.names[ix]] = p
-        return d_perf
-    
-    def pairwise_5x2CV(self, models, names, size=0, pr=False, verbose=0, seeds=[13324, 5351, 13723, 24659, 35447]):
-        """
-        Perform 5x2 Cross validation.
-        
-        Input:
-            models = list of Machine Learning Models
-            names = list of names
-            size = size of samples (required for sensitivity analysis)
-            pr = compare precision recall curves (default = ROC curves)
-            verbose = dictate how much information is printed
-            seeds = random seed used to ensure same results 
-        """
-        if size != 0 :
-            sens_analysis = True
-        else :
-            sens_analysis = False
-        X = self.X
-        y = self.y
 
-        clf1, clf2 = models[0], models[1]
+    def ttest_5x2cv(self, list_pred, list_ref, verbose=False):
+        """
+        Calculate the statistical significance with a paired t-test
+        over the 5x2 fold cross validation. The P-value describes 
+        the probability that the observed difference between 
+        the Machine learning Model and the reference in the 
+        validation data is not true. 
 
-        # Initialize the score difference for the 1st fold of the 1st iteration 
+        Input:
+            list_pred = list of performance scores for the model of 
+                interest over all rounds and folds (5x2 CV)
+            list_ref = list of performance scores for the 
+                reference model
+
+        Output:
+            t_bar = calculated t-statistic (5 DF)
+            p = p-value indicating statistical significance
+        
+        This code is inspired by: 
+            https://www.kaggle.com/ogrellier/
+            parameter-tuning-5-x-2-fold-cv-statistical-test
+        """
         p_1_1 = 0.0
-        # Initialize a place holder for the variance estimate
         s_sqr = 0.0
-        # Initialize scores list for both classifiers
+        ix = 0
         scores_1 = []
         scores_2 = []
-        diff_scores = []
-        # Iterate through 5 2-fold CV
-        for i_s, seed in enumerate(seeds):
-            # Split the dataset in 2 parts with the current seed
-            folds = StratifiedKFold(n_splits=2, shuffle=True, random_state=seed)
-            # Initialize score differences
-            p_i = np.zeros(2)
-            # Go through the current 2 fold
-            for i_f, (trn_idx, val_idx) in enumerate(folds.split(y, y)):
-                clf1, clf2 = models[0], models[1]
-                # Split the data
-                #print(trn[0][0])
-                if sens_analysis:
-                    #trn_x, trn_y = trn[0]
-                    #trn2_x, trn2_y = trn[0]
-                    #val_x, val_y = trn[1]
-                    df_test = pd.DataFrame(data={'IX': val_idx, 'Outcome': self.y[val_idx], 
-                                            'Text' : self.X[val_idx]})
-                    df_train = pd.DataFrame(data={'IX': trn_idx, 'Outcome': self.y[trn_idx], 
-                                                'Text' : self.X[trn_idx]})
-                
-                    df_sub = df_train.sample(n=size, random_state=self.seed)
-                    #print(len(df_sub), len(df_train))
-                    trn_x, trn_y = df_sub['Text'], df_sub['Outcome']
-                    trn2_x, trn2_y = df_train['Text'], df_train['Outcome']
-                    val_x, val_y = df_test['Text'], df_test['Outcome']
-                else :
-                    trn_x, trn_y = list(X[trn_idx]), list(y[trn_idx])
-                    val_x, val_y = list(X[val_idx]), list(y[val_idx])
 
-                # Train classifiers
-                if names[0]!='Word Matching':
-                    clf1.fit(trn_x, trn_y)
-                    preds_1 = clf1.predict_proba(val_x)[:, 1] # num_iteration=clf1.best_iteration_
-                else:
-                    preds_1 = clf1.predict(val_x)
-                if names[1]!='Word Matching':
-                    if sens_analysis:
-                        clf2.fit(trn2_x, trn2_y)
-                        preds_2 = clf2.predict_proba(val_x)[:, 1] # , num_iteration=clf2.best_iteration_
-                    else :
-                        clf2.fit(trn_x, trn_y)
-                        preds_2 = clf2.predict_proba(val_x)[:, 1]
-                else :
-                        preds_2 = clf2.predict(val_x)
-                # Compute scores
-                if pr:
-                    score_1 = metrics.average_precision_score(val_y, preds_1)
-                    score_2 = metrics.average_precision_score(val_y, preds_2)
-                else :
-                    score_1 = metrics.roc_auc_score(val_y, preds_1)
-                    score_2 = metrics.roc_auc_score(val_y, preds_2)
-                # keep score history for mean and stdev calculation
+        if list_pred == list_ref:
+            return 1, 1
+
+        for i_r in range(self.rounds):
+            p_i = np.zeros(2)
+            for i_f in range(self.folds):
+                score_1, score_2 = list_pred[ix], list_ref[ix]
                 scores_1.append(score_1)
                 scores_2.append(score_2)
-                diff_scores.append(score_1 - score_2)
                 if verbose:
-                    print("Fold %2d score difference = %.6f" % (i_f + 1, score_1 - score_2))
+                    print("Round %2d Fold %2d score difference = %.6f" % (i_r +1, i_f + 1, score_1 - score_2))
                 # Compute score difference for current fold  
                 p_i[i_f] = score_1 - score_2
                 # Keep the score difference of the 1st iteration and 1st fold
-                if (i_s == 0) & (i_f == 0):
+                if (i_r == 0) & (i_f == 0):
                     p_1_1 = p_i[i_f]
+                ix += 1
             # Compute mean of scores difference for the current 2-fold CV
             p_i_bar = (p_i[0] + p_i[1]) / 2
             # Compute the variance estimate for the current 2-fold CV
@@ -1546,12 +1513,6 @@ class TextClassification(object):
 
         # Compute t value as the first difference divided by the square root of variance estimate
         t_bar = p_1_1 / ((s_sqr / 5) ** .5) 
-        
-        p = stats.t.sf(np.abs(t_bar),df=5)*2  # two-sided pvalue = Prob(abs(t)>tt)
-        if verbose:
-            print("%s mean score and stdev : %.6f + %.6f" % (names[0], np.mean(scores_1), np.std(scores_1)))
-            print("%s mean score and stdev : %.6f + %.6f" % (names[1], np.mean(scores_2), np.std(scores_2)))
-            print("Score difference mean + stdev : %.6f + %.6f" 
-                  % (np.mean(diff_scores), np.std(diff_scores)))
-            print('t-statistic = %6.3f pvalue = %6.4f' % (t_bar, p))
+
+        p = stats.t.sf(np.abs(t_bar),df=5)*2 
         return t_bar, p

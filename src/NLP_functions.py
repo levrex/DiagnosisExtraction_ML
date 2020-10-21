@@ -14,6 +14,9 @@ import pandas as pd
 import pattern.nl as patNL
 import pattern.de as patDE
 import pattern.en as patEN
+import pattern.es as patES
+import pattern.fr as patFR
+import pattern.it as patIT
 from pyxdameraulevenshtein import normalized_damerau_levenshtein_distance_ndarray
 import re
 from scipy import stats, interp
@@ -104,7 +107,15 @@ def lemmatizingText(sentence, lan='en'):
     if lan == 'nl':
         return ' '.join(patNL.Sentence(patNL.parse(sentence, lemmata=True)).lemmata)
     elif lan == 'en':
-        return ' '.join(patNL.Sentence(patNL.parse(sentence, lemmata=True)).lemmata)
+        return ' '.join(patEN.Sentence(patEN.parse(sentence, lemmata=True)).lemmata)
+    elif lan == 'de':
+        return ' '.join(patDE.Sentence(patDE.parse(sentence, lemmata=True)).lemmata)
+    elif lan == 'it':
+        return ' '.join(patIT.Sentence(patIT.parse(sentence, lemmata=True)).lemmata)
+    elif lan == 'es':
+        return ' '.join(patES.Sentence(patES.parse(sentence, lemmata=True)).lemmata)
+    elif lan == 'fr':
+        return ' '.join(patFR.Sentence(patFR.parse(sentence, lemmata=True)).lemmata)
 
 def stemmingText(sentence):
     """
