@@ -65,3 +65,14 @@ Which will start a notebook session in the browser from which you can open the p
 ## Pipeline
 ![alt text](https://github.com/levrex/DiagnosisExtraction_ML/blob/master/figures/md/PipelineDiagnosisPrediction.png "Pipeline ML-Prediction RA diagnosis")
 Pipeline displaying the general workflow, where the green sections are performed automatically and the blue parts require manual evaluation. A simple annotation (binary Yes or No) will suffice, thus reducing the mental load of the physician.
+
+## Citation
+If you were to use this pipeline, please cite our paper: 
+
+Maarseveen T, Meinderink T, Reinders M, Knitza J, Huizinga T, Kleyer A, Simon D, van den Akker E, Knevel R
+Machine Learning Electronic Health Record Identification of Patients with Rheumatoid Arthritis: Algorithm Pipeline Development and Validation Study
+JMIR Med Inform 2020;8(11):e23930
+URL: https://medinform.jmir.org/2020/11/e23930
+DOI: 10.2196/23930
+PMID: 33252349
+
