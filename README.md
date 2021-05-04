@@ -76,3 +76,5 @@ URL: https://medinform.jmir.org/2020/11/e23930
 DOI: 10.2196/23930
 PMID: 33252349
 
+## Contact
+If you experience difficulties with implementing the pipeline or if you have any other questions feel free to send me an e-mail. You can contact me on: t.d.maarseveen@lumc.nl 
