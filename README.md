@@ -1,3 +1,12 @@
+[![Python package](https://github.com/levrex/DiagnosisExtraction_ML/actions/workflows/pipelineDiagnosis.yml/badge.svg?branch=master)](https://github.com/levrex/DiagnosisExtraction_ML/actions/workflows/pipelineDiagnosis.yml)
+[![Python 3.6](https://img.shields.io/badge/python-3.6-blue.svg)](https://www.python.org/downloads/release/python-360/)
+[![Python 3.7](https://img.shields.io/badge/python-3.7-blue.svg)](https://www.python.org/downloads/release/python-370/)
+[![GitHub stars](https://img.shields.io/github/stars/levrex/DiagnosisExtraction_ML)](https://github.com/levrex/DiagnosisExtraction_ML/stargazers)
+[![GitHub forks](https://img.shields.io/github/forks/levrex/DiagnosisExtraction_ML)](https://github.com/levrex/DiagnosisExtraction_ML/network)
+![GitHub issues](https://img.shields.io/github/issues/levrex/DiagnosisExtraction_ML)
+![GitHub](https://img.shields.io/github/license/levrex/DiagnosisExtraction_ML)
+
+
 # DiagnosisExtraction_ML
 Pipeline for building Machine Learning Classifiers tasked with extracting the diagnosis based on EHR data (Natural Language / Narrative data). This repository works with Python 3.6.
 
