@@ -9,10 +9,7 @@ import math
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-<<<<<<< HEAD
 #from pyxdameraulevenshtein import normalized_damerau_levenshtein_distance_ndarray
-=======
->>>>>>> a3c0611c78d2349f40267ea7359455d75ade1796
 import re
 from scipy import stats, interp, sparse
 import seaborn as sns
@@ -99,10 +96,11 @@ class TextClassification(object):
         self.X = X
         self.y = y
         self.seed = seed
-        self.rounds = 1
-        self.folds = 10 # default = 10 CV
+        self.iterations = 10
         self.test_size = test_frac
         self.names = names
+        #self.k_folds = preset_CV10Folds(X)
+        # of median iteration
         self.fittedmodels = {}
         self.d_conf = {}
         self.d_aucs = {}
@@ -111,7 +109,7 @@ class TextClassification(object):
         self.l_method = []
         self.medIter = {} # dictionary key : medIter
         self.palette = ['r', 'y', 'c', 'b', 'g', 'magenta', 'indigo', 'black', 'orange'] 
-        self.output_path = r'output_files/'
+        self.output_path = r'/kaggle/'
         self.colors = {}
         self.ref = ''
     
@@ -129,6 +127,8 @@ class TextClassification(object):
     
     def getF1(self):
         return self.d_f1
+    
+    
     
     def setOutputPath(self, output_path):
         """
@@ -168,29 +168,17 @@ class TextClassification(object):
         """
         return self.seed
     
-    def setFolds(self, folds):
+    def setIterations(self, iterations):
         """
-        Update nr of folds with the provided user input
+        Update nr of iterations with the provided user input
         """
-        self.folds = folds 
-        
-    def getFolds(self):
-        """
-        Retrieve current nr of folds that is used for the fold creation
-        """
-        return self.folds
-    
-    def setRounds(self, rounds):
-        """
-        Update nr of rounds with the provided user input
-        """
-        self.rounds = rounds
+        self.iterations = iterations
 
-    def getRounds(self):
+    def getIterations(self):
         """
-        Retrieve current nr of rounds that is used for the fold creation
+        Retrieve current nr of iterations that is used for the fold creation
         """
-        return self.rounds
+        return self.iterations
     
     def setFolds(self, folds):
         """
@@ -232,17 +220,15 @@ class TextClassification(object):
         
     def splitData(self):
         """
-        Split the dataset randomly n-times (defined by self.rounds) for k-fold
+        Split the dataset randomly n-times (defined by self.iterations) for k-fold
         cross validation. The size of the test_size is defined by self.test_size. 
         
         Output:
             l_folds = list containing the indices for the train/test
                 entries, required to contstruct the k-folds.
         """
-        l_folds = []
-        for i in range(self.rounds): 
-            ss = StratifiedKFold(n_splits=self.folds, shuffle=True, random_state=self.seed+i)
-            l_folds.extend(ss.split(self.X, self.y))
+        ss = ShuffleSplit(n_splits=self.iterations, test_size=self.test_size, random_state=self.seed)
+        l_folds = ss.split(self.X)
         return l_folds
     
     def binarizeLabel(self, l, true_label='y'):
@@ -259,7 +245,7 @@ class TextClassification(object):
         d_conf = {}
         iterat = 0
         print('\nGeneral settings for training/testing:')
-        print('Method = Cross Validation ' + (str(self.rounds) + 'x')*(self.rounds!=1)  + str(self.folds) + '-fold')
+        print('Method = Cross Validation ' + str(self.iterations) + '-fold')
         print('\tfraction test:\t', self.test_size, '\n')
         for clf in range(len(self.model_list)):
             lbl = self.names[iterat]
@@ -430,7 +416,7 @@ class TextClassification(object):
         l_roc, aucs, l_f1 = [], [], []
         fpr_scale = np.linspace(0, 1, 100)
         tprs = []
-        for x in range(len(self.d_conf[lbl])): # loop through rounds
+        for x in range(len(self.d_conf[lbl])): # loop through iterations
             #scores = self.scores(lbl, x)
             tpr, fpr = self.d_conf[lbl][x]['tpr'], self.d_conf[lbl][x]['fpr']#scores[1], scores[3]
             tprs.append(interp(fpr_scale, fpr, tpr))
@@ -473,7 +459,7 @@ class TextClassification(object):
         """
         l_prec, aucs, l_f1 = [], [], []
         recall_scale = np.linspace(0, 1, 100)
-        for x in range(len(self.d_conf[lbl])): # loop through rounds
+        for x in range(len(self.d_conf[lbl])): # loop through iterations
             tpr, prec = self.d_conf[lbl][x]['tpr'], self.d_conf[lbl][x]['prc']
             prec[0] = 0.0
             inter_prec = interp(recall_scale, tpr, prec)
@@ -1141,7 +1127,7 @@ class TextClassification(object):
         #plt.figure()
         ax = plt.gca()
         ax.grid(False)
-        plt.savefig("figures/results/confusion_matrix_SVM_"+ str(threshold) + ".png")
+        plt.savefig("/kaggle/working/confusion_matrix_SVM_"+ str(threshold) + ".png")
 
         print('\n|Overview of performance metrics|')
         print('Threshold:\t', round(threshold,2))
@@ -1314,9 +1300,32 @@ class TextClassification(object):
         plt.xticks(np.arange(1, 1 + len(top_coefficients)), feature_names[top_coefficients], rotation=60, ha='right')
         plt.show()
         
-<<<<<<< HEAD
-=======
-    def plotF1scores(self, lbls=[], debug=False):
+    #def plot_feature_importance(self, name):
+    #    model, middleIndex = self.retrievingMedianModel(name)
+    #    feature_importance = model.feature_importances_
+    #    sorted_idx = np.argsort(feature_importance)[-top_features:]
+    #    pos = np.arange(sorted_idx.shape[0]) + .5
+    #    fig = plt.figure(figsize=(12, 6))
+    #    plt.subplot(1, 2, 1)
+    #    
+    #    l_folds = [(train, test) for train, test in self.splitData()]
+    #    data = self.X[l_folds[middleIndex][0]]
+    #    
+    #    plt.barh(pos, feature_importance[sorted_idx], align='center')
+    #    plt.yticks(pos, np.array(data.feature_names)[sorted_idx])
+    #    plt.title('Feature Importance (MDI)')
+    #
+    #    result = permutation_importance(model, self.X, self.y, n_repeats=10,
+    #                                    random_state=42, n_jobs=2)
+    #    sorted_idx = result.importances_mean.argsort()
+    #    plt.subplot(1, 2, 2)
+    #    plt.boxplot(result.importances[sorted_idx].T,
+    #                vert=False, labels=np.array(data.feature_names)[sorted_idx])
+    #    plt.title("Permutation Importance (test set)")
+    #    fig.tight_layout()
+    #    plt.show()
+        
+    def plotF1scores(self, debug=False):
         """
         Plot mean F1-scores for the 10 fold cross validation with error (std) bars
         
@@ -1324,27 +1333,16 @@ class TextClassification(object):
             debug = print actual results
         """       
         x_pos, l_mean, l_std = self.calculateF1()
-        
-        if lbls == []:
-            lbls = list(self.d_f1.keys())# + '\n' +
->>>>>>> a3c0611c78d2349f40267ea7359455d75ade1796
+        lbls = list(self.d_f1.keys())
         
         if debug:
             for x in range(len(lbls)):
                 print(lbls[x], ':', '%.2f+/-%.2f' % (l_mean[x], l_std[x]))
         
-        my_colors = []
-        for x in range(len(lbls)):
-            if my_colors == self.ref:
-                my_colors.append('blue')
-            else:
-                my_colors.append('b')
         # Build the plot
         plt.figure(figsize=(14,14))
         fig, ax = plt.subplots()
-        ax.bar(x_pos, l_mean, yerr=l_std, align='center', alpha=0.5, ecolor='black', color=my_colors, capsize=10)
-        #barlist=plt.bar([1,2,3,4], [1,2,3,4])
-        #barlist[0].set_color('r')
+        ax.bar(x_pos, l_mean, yerr=l_std, align='center', alpha=0.5, ecolor='black', capsize=10)
         ax.set_ylabel('F1-score +/- std')
         ax.set_xticks(x_pos)
         ax.tick_params(axis='both', which='major', labelsize=9)
@@ -1354,142 +1352,8 @@ class TextClassification(object):
 
         # Save the figure and show
         plt.tight_layout()
-        plt.savefig('figures/results/Bar_plot_f1.png')
+        plt.savefig('/kaggle/working/Bar_plot_f1.png')
         plt.show()
-        
-    def plotF1scores(self, lbls=[], debug=False):
-        """
-        Plot mean F1-scores for the 10 fold cross validation with error (std) bars
-        
-        Input:
-            debug = print actual results
-        """       
-        x_pos, l_mean, l_std = self.calculateF1()
-        
-        if lbls != []:
-            lbls = list(self.d_f1.keys())# + '\n' +
-        
-        if debug:
-            for x in range(len(lbls)):
-                print(lbls[x], ':', '%.2f+/-%.2f' % (l_mean[x], l_std[x]))
-        
-        my_colors = []
-        for x in range(len(lbls)):
-            if lbls[x] == self.ref:
-                my_colors.append('blue')
-            else:
-                my_colors.append('b')
-
-        # Build the plot
-        plt.figure(figsize=(14,14))
-        fig, ax = plt.subplots()
-        ax.bar(x_pos, l_mean, yerr=l_std, align='center', alpha=0.5, ecolor='black', color=my_colors, capsize=10)
-        ax.set_ylabel('F1-score +/- std')
-        ax.set_xticks(x_pos)
-        ax.tick_params(axis='both', which='major', labelsize=9)
-        ax.set_xticklabels(lbls, rotation=45)
-        ax.set_title('Barplot with F1-score for the different classifiers')
-        ax.yaxis.grid(True)
-
-        # Save the figure and show
-        plt.tight_layout()
-        plt.savefig('figures/results/Bar_plot_f1.png')
-        plt.show()
-    
-    def plotPrevalencePR(self, name, cv=True, l_range_prev=[0.1, 0.25, 0.5, 0.75, 0.9], colors=[]):
-        """
-        This function generates a precision recall curve and visualizes how 
-        the precision is affected by the prevalence in the dataset by asserting
-        a list with chosen prevalences (l_range_prev). This function doesn't 
-        require fitted models.
-
-        Depending on the fraction & the ratio of controls / cases, the
-        negative cases or positive cases are reduced or increased (replace=True)
-        to achieve the desired ratio.
-        
-        The initial size will be conserved! 
-
-        Important to note: 
-
-        Input:
-            name = name of classifier (string)
-            l_range_prev = list of different prevalence fractions that are 
-                measured.
-            cv = apply cross fold (warning: not suggested if training takes a long time)
-            colors = palette with colors indicating the different sizes
-
-        Output:
-            plt = matplotlib pyplot featuring the Precision Recall curve
-                of one classifier
-        """
-        model_id = self.names.index(name)
-        clf = self.model_list[model_id]
-        if colors == []:
-            colors=['r', 'y', 'c', 'b', 'g', 'magenta', 'indigo', 'black', 'orange'] 
-        recall_scale = np.linspace(0, 1, 100)
-        d_aucs = {}
-
-        l_folds = [(train, test) for train, test in self.splitData()]
-        counter = 0 
-        
-        df = pd.DataFrame(data={'IX': l_folds[0][0], 'Outcome': self.y[l_folds[0][0]], 
-                                        'Text' : self.X[l_folds[0][0]]})
-        l_range_prev.append(len(df[df['Outcome']==1])/(len(df[df['Outcome']==1])+ len(df[df['Outcome']==0])))
-        for pref_prev in l_range_prev:
-            tprs = []
-            aucs = []
-            for train_ix, test_ix in l_folds:
-                df_test = pd.DataFrame(data={'IX': test_ix, 'Outcome': self.y[test_ix], 
-                                'Text' : self.X[test_ix]})
-                df_train = pd.DataFrame(data={'IX': train_ix, 'Outcome': self.y[train_ix], 
-                                        'Text' : self.X[train_ix]})
-                
-                # Divide by class
-                df_class_0 = df_train[df_train['Outcome'] == 0]
-                df_class_1 = df_train[df_train['Outcome'] == 1]
-                
-                # Get Counts
-                count_class_0, count_class_1 = len(df_class_0), len(df_class_1)
-                total_count = count_class_0 + count_class_1 
-                
-                # Get Fractions
-                prev_y = count_class_1/total_count
-                prev_n = count_class_0/total_count
-                
-                if prev_y < pref_prev:
-                    # Oversampling strategy -> ensure that it is the same size as initial
-                    df_class_0_upd = df_class_0.sample(n=math.trunc(total_count*(1-pref_prev)), replace=False, random_state=self.seed)
-                    df_class_1_upd = df_class_1.sample(n=math.trunc(total_count*pref_prev), replace=True, random_state=self.seed)
-                    df_train = pd.concat([df_class_1_upd, df_class_0_upd], axis=0)
-                    df_train = df_train.sample(frac=1, random_state=self.seed)
-                elif prev_y > pref_prev:
-                    # Undersample
-                    df_class_0_upd = df_class_0.sample(n=math.trunc(total_count*(1-pref_prev)), replace=True, random_state=self.seed)
-                    df_class_1_upd = df_class_1.sample(n=math.trunc(total_count*pref_prev), replace=False, random_state=self.seed)
-                    df_train = pd.concat([df_class_1_upd, df_class_0_upd], axis=0)
-                    df_train = df_train.sample(frac=1, random_state=self.seed)
-                
-                estimator = clf.fit(df_train['Text'], df_train['Outcome'])
-                probas_ = estimator.predict_proba(df_test['Text'])
-                #print(len(self.intersection(train_ix, test_ix)))
-        
-                prec, tpr, thresholds = precision_recall_curve(df_test['Outcome'], probas_[:, 1])
-                prec[0] = 0.0
-                inter_prec = interp(recall_scale, prec, tpr)
-                inter_prec[0] = 1.0 
-                tprs.append(inter_prec)
-                auc = self.calculateAUC(recall_scale, inter_prec)
-                aucs.append(auc)
-                
-            d_aucs[str(pref_prev*100)] = aucs
-            print('Prevalence (last iter):\n', df_train.Outcome.value_counts())
-            plt = self.plotPR(tprs, aucs, colors[counter], str(pref_prev*100) + '% cases')
-            counter += 1
-        plt.rcParams.update({'font.size': 20})
-        plt.legend()
-        plt.title(name + ' performance on different proportions')
-        return plt, d_aucs
-<<<<<<< HEAD
     
     def plotPrevalencePR(self, name, cv=True, l_range_prev=[0.1, 0.25, 0.5, 0.75, 0.9], colors=[]):
         """
@@ -1597,23 +1461,6 @@ class TextClassification(object):
                 interest over all rounds and folds (5x2 CV)
             list_ref = list of performance scores for the 
                 reference model
-=======
-
-    def ttest_5x2cv(self, list_pred, list_ref, verbose=False):
-        """
-        Calculate the statistical significance with a paired t-test
-        over the 5x2 fold cross validation. The P-value describes 
-        the probability that the observed difference between 
-        the Machine learning Model and the reference in the 
-        validation data is not true. 
-
-        Input:
-            list_pred = list of performance scores for the model of 
-                interest over all rounds and folds (5x2 CV)
-            list_ref = list of performance scores for the 
-                reference model
-
->>>>>>> a3c0611c78d2349f40267ea7359455d75ade1796
         Output:
             t_bar = calculated t-statistic (5 DF)
             p = p-value indicating statistical significance

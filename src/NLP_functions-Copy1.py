@@ -10,20 +10,7 @@ from inspect import signature
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-<<<<<<< HEAD
-#import pattern.nl as patNL -> outdated (are not compatible with Python 3.7+)
-#import pattern.de as patDE
-#import pattern.en as patEN
 from pyxdameraulevenshtein import normalized_damerau_levenshtein_distance_seqs
-=======
-import pattern.nl as patNL
-import pattern.de as patDE
-import pattern.en as patEN
-import pattern.es as patES
-import pattern.fr as patFR
-import pattern.it as patIT
-from pyxdameraulevenshtein import normalized_damerau_levenshtein_distance_ndarray
->>>>>>> a3c0611c78d2349f40267ea7359455d75ade1796
 import re
 from scipy import stats, interp
 from sklearn.model_selection import learning_curve, ShuffleSplit
@@ -35,12 +22,14 @@ from sklearn import tree
 from statistics import mean
 import unicodedata
 from yellowbrick.target import FeatureCorrelation
+#from yellowbrick.features.importances import FeatureImportances # YELLOWBRICK 0.09
+#from yellowbrick.model_selection import FeatureImportances
 from yellowbrick.text import DispersionPlot
 from sklearn.feature_selection import chi2
 from sklearn.metrics import precision_recall_curve
 
 SEED = 26062019
-OUTPUT_PATH = r'output_files/'
+OUTPUT_PATH = r'/kaggle/working/'
 
 
 import numpy as np
@@ -97,9 +86,6 @@ class TypoCorrection(object):
 
 def lemmatizingText(sentence, lan='en'):
     """
-    Warning: PATTERN is outdated (does not work with Python 3.7),
-        use stemming instead!
-    
     This function normalizes words with the pattern.nl package. 
     Lemmatisation returns words to the base form. The base form
     should be a valid word in the language.
@@ -114,15 +100,7 @@ def lemmatizingText(sentence, lan='en'):
     if lan == 'nl':
         return ' '.join(patNL.Sentence(patNL.parse(sentence, lemmata=True)).lemmata)
     elif lan == 'en':
-        return ' '.join(patEN.Sentence(patEN.parse(sentence, lemmata=True)).lemmata)
-    elif lan == 'de':
-        return ' '.join(patDE.Sentence(patDE.parse(sentence, lemmata=True)).lemmata)
-    elif lan == 'it':
-        return ' '.join(patIT.Sentence(patIT.parse(sentence, lemmata=True)).lemmata)
-    elif lan == 'es':
-        return ' '.join(patES.Sentence(patES.parse(sentence, lemmata=True)).lemmata)
-    elif lan == 'fr':
-        return ' '.join(patFR.Sentence(patFR.parse(sentence, lemmata=True)).lemmata)
+        return ' '.join(patNL.Sentence(patNL.parse(sentence, lemmata=True)).lemmata)
 
 def stemmingText(sentence, stemmer):
     """
@@ -138,7 +116,7 @@ def stemmingText(sentence, stemmer):
             Natural Language type record (str)
         stemmer = the NLTK stemmer that is used to bring back
             words to the base form
-    """  
+    """ 
     return ' '.join([stemmer.stem(x) for x in sentence.split(' ')])
 
 def simpleCleaning(sentence, lemma=False): # Keep in mind: this function removes numbers
@@ -290,7 +268,7 @@ def optimalCutoff(pred, true, lbl, plot=False):
         plt.ylabel('True Positive Rate')
         plt.title('Receiver operating characteristic')
         ax.set_xticklabels([])
-        plt.savefig('figures/cutoff_plot/CutOffPlot_' + lbl + '.png')
+        plt.savefig('/kaggle/working/CutOffPlot_' + lbl + '.png')
         print(roc.ix[(roc.tf-0).abs().argsort()[:1]])
     return cutoff
 
@@ -628,7 +606,7 @@ def plotSampleDistribution(X, nr_features=50, stop_words = ['in']):
 
     df = pd.DataFrame({'section':labels, 'frequency':values})
     ax = df.plot(kind='bar',  title ="Prevalence of Features", figsize=(16, 6), x='section', legend=True, fontsize=12, rot=90)
-    plt.savefig('figures/feature_plot/top' + str(nr_features) + '_features_dist.png', bbox_inches='tight')
+    plt.savefig('/kaggle/working/top' + str(nr_features) + '_features_dist.png', bbox_inches='tight')
     return plt
 
 def plotTrainTestDistribution(X_train, X_test, nr_features=50):
