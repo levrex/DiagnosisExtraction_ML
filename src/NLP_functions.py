@@ -7,14 +7,13 @@ Created on Thu Jun 27 10:17:52 2019
 import collections
 from collections import Counter
 from inspect import signature
-import kpss_py3 as kps
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import pattern.nl as patNL
-import pattern.de as patDE
-import pattern.en as patEN
-from pyxdameraulevenshtein import normalized_damerau_levenshtein_distance_ndarray
+#import pattern.nl as patNL -> outdated (are not compatible with Python 3.7+)
+#import pattern.de as patDE
+#import pattern.en as patEN
+from pyxdameraulevenshtein import normalized_damerau_levenshtein_distance_seqs
 import re
 from scipy import stats, interp
 from sklearn.model_selection import learning_curve, ShuffleSplit
@@ -26,8 +25,6 @@ from sklearn import tree
 from statistics import mean
 import unicodedata
 from yellowbrick.target import FeatureCorrelation
-#from yellowbrick.features.importances import FeatureImportances # YELLOWBRICK 0.09
-from yellowbrick.model_selection import FeatureImportances
 from yellowbrick.text import DispersionPlot
 from sklearn.feature_selection import chi2
 from sklearn.metrics import precision_recall_curve
@@ -72,7 +69,7 @@ class TypoCorrection(object):
             if word in self.d_fix.keys(): 
                 new_sent += self.d_fix[word] + ' '
             elif np.in1d(word, self.dictionary) == False:
-                arr = normalized_damerau_levenshtein_distance_ndarray(word, self.dictionary)
+                arr = normalized_damerau_levenshtein_distance_seqs(word, self.dictionary)
                 if np.amin(arr) <= self.thresh:
                     result = np.where(arr == np.amin(arr))
                     self.d_fix[word] = self.dictionary[result][0]
@@ -90,6 +87,9 @@ class TypoCorrection(object):
 
 def lemmatizingText(sentence, lan='en'):
     """
+    Warning: PATTERN is outdated (does not work with Python 3.7),
+        use stemming instead!
+    
     This function normalizes words with the pattern.nl package. 
     Lemmatisation returns words to the base form. The base form
     should be a valid word in the language.
@@ -106,7 +106,7 @@ def lemmatizingText(sentence, lan='en'):
     elif lan == 'en':
         return ' '.join(patNL.Sentence(patNL.parse(sentence, lemmata=True)).lemmata)
 
-def stemmingText(sentence):
+def stemmingText(sentence, stemmer):
     """
     This function normalizes words with the kps package. 
     Stemming returns words to the base form. The base form
@@ -118,8 +118,10 @@ def stemmingText(sentence):
     Input: 
         sentence = written text from an EHR record or another
             Natural Language type record (str)
-    """
-    return ' '.join([kps.stem(x) for x in sentence.split(' ')])
+        stemmer = the NLTK stemmer that is used to bring back
+            words to the base form
+    """  
+    return ' '.join([stemmer.stem(x) for x in sentence.split(' ')])
 
 def simpleCleaning(sentence, lemma=False): # Keep in mind: this function removes numbers
     """

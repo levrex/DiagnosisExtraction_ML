@@ -2,7 +2,7 @@
 
 # Create a machine learning environment
 
-conda create -n ml_env python=3.5
+conda create -n ml_env python=3.7.12
 
 source activate ml_env
 
