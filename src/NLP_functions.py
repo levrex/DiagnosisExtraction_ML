@@ -84,28 +84,7 @@ class TypoCorrection(object):
     
     def getUniqueCorrections(self):
         return self.d_fix
-
-def lemmatizingText(sentence, lan='en'):
-    """
-    Warning: PATTERN is outdated (does not work with Python 3.7),
-        use stemming instead!
     
-    This function normalizes words with the pattern.nl package. 
-    Lemmatisation returns words to the base form. The base form
-    should be a valid word in the language.
-
-    Example: Walking, Walks and Walked are all translated to 
-        Walk
-        
-    Input: 
-        sentence = written text from an EHR record or another
-            Natural Language type record (str)
-    """
-    if lan == 'nl':
-        return ' '.join(patNL.Sentence(patNL.parse(sentence, lemmata=True)).lemmata)
-    elif lan == 'en':
-        return ' '.join(patNL.Sentence(patNL.parse(sentence, lemmata=True)).lemmata)
-
 def stemmingText(sentence, stemmer):
     """
     This function normalizes words with the kps package. 
