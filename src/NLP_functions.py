@@ -97,27 +97,27 @@ def stemmingText(sentence, stemmer):
     Input: 
         sentence = written text from an EHR record or another
             Natural Language type record (str)
-        stemmer = the NLTK stemmer that is used to bring back
+        stemmer = the stemmer that is used to bring back
             words to the base form
     """  
     return ' '.join([stemmer.stem(x) for x in sentence.split(' ')])
 
-def simpleCleaning(sentence, lemma=False): # Keep in mind: this function removes numbers
+def simpleCleaning(sentence, stem=False): # Keep in mind: this function removes numbers
     """
     Remove special characters that are not relevant to 
     the interpretation of the text
     
     Input:
         sentence = free written text from EHR record
-        lemma = lemmatize the text
+        stem = normalize words (with a stemmer)
     Output :
         processed sentence (lemmatized depending on preference)
     """
     sticky_chars = r'([!#,.:";@\-\+\\/&=$\]\[<>\'^\*`â€™\(\)\d])'
     sentence = re.sub(sticky_chars, r' ', sentence)
     sentence = sentence.lower()
-    if (lemma):
-        return lemmatizingText(sentence)
+    if (stem):
+        return stemmingText(sentence)
     else :
         return sentence
     
