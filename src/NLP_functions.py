@@ -25,6 +25,7 @@ from sklearn import tree
 from statistics import mean
 import unicodedata
 from yellowbrick.target import FeatureCorrelation
+from yellowbrick.model_selection import FeatureImportances
 from yellowbrick.text import DispersionPlot
 from sklearn.feature_selection import chi2
 from sklearn.metrics import precision_recall_curve
