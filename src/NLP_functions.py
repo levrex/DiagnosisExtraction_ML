@@ -10,20 +10,10 @@ from inspect import signature
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-<<<<<<< HEAD
 #import pattern.nl as patNL -> outdated (are not compatible with Python 3.7+)
 #import pattern.de as patDE
 #import pattern.en as patEN
 from pyxdameraulevenshtein import normalized_damerau_levenshtein_distance_seqs
-=======
-import pattern.nl as patNL
-import pattern.de as patDE
-import pattern.en as patEN
-import pattern.es as patES
-import pattern.fr as patFR
-import pattern.it as patIT
-from pyxdameraulevenshtein import normalized_damerau_levenshtein_distance_ndarray
->>>>>>> a3c0611c78d2349f40267ea7359455d75ade1796
 import re
 from scipy import stats, interp
 from sklearn.model_selection import learning_curve, ShuffleSplit
@@ -114,15 +104,7 @@ def lemmatizingText(sentence, lan='en'):
     if lan == 'nl':
         return ' '.join(patNL.Sentence(patNL.parse(sentence, lemmata=True)).lemmata)
     elif lan == 'en':
-        return ' '.join(patEN.Sentence(patEN.parse(sentence, lemmata=True)).lemmata)
-    elif lan == 'de':
-        return ' '.join(patDE.Sentence(patDE.parse(sentence, lemmata=True)).lemmata)
-    elif lan == 'it':
-        return ' '.join(patIT.Sentence(patIT.parse(sentence, lemmata=True)).lemmata)
-    elif lan == 'es':
-        return ' '.join(patES.Sentence(patES.parse(sentence, lemmata=True)).lemmata)
-    elif lan == 'fr':
-        return ' '.join(patFR.Sentence(patFR.parse(sentence, lemmata=True)).lemmata)
+        return ' '.join(patNL.Sentence(patNL.parse(sentence, lemmata=True)).lemmata)
 
 def stemmingText(sentence, stemmer):
     """

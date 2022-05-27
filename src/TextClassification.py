@@ -9,10 +9,7 @@ import math
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-<<<<<<< HEAD
 #from pyxdameraulevenshtein import normalized_damerau_levenshtein_distance_ndarray
-=======
->>>>>>> a3c0611c78d2349f40267ea7359455d75ade1796
 import re
 from scipy import stats, interp, sparse
 import seaborn as sns
@@ -99,10 +96,11 @@ class TextClassification(object):
         self.X = X
         self.y = y
         self.seed = seed
-        self.rounds = 1
-        self.folds = 10 # default = 10 CV
+        self.iterations = 10
         self.test_size = test_frac
         self.names = names
+        #self.k_folds = preset_CV10Folds(X)
+        # of median iteration
         self.fittedmodels = {}
         self.d_conf = {}
         self.d_aucs = {}
@@ -168,29 +166,17 @@ class TextClassification(object):
         """
         return self.seed
     
-    def setFolds(self, folds):
+    def setIterations(self, iterations):
         """
-        Update nr of folds with the provided user input
+        Update nr of iterations with the provided user input
         """
-        self.folds = folds 
-        
-    def getFolds(self):
-        """
-        Retrieve current nr of folds that is used for the fold creation
-        """
-        return self.folds
-    
-    def setRounds(self, rounds):
-        """
-        Update nr of rounds with the provided user input
-        """
-        self.rounds = rounds
+        self.iterations = iterations
 
-    def getRounds(self):
+    def getIterations(self):
         """
-        Retrieve current nr of rounds that is used for the fold creation
+        Retrieve current nr of iterations that is used for the fold creation
         """
-        return self.rounds
+        return self.iterations
     
     def setFolds(self, folds):
         """
@@ -232,17 +218,15 @@ class TextClassification(object):
         
     def splitData(self):
         """
-        Split the dataset randomly n-times (defined by self.rounds) for k-fold
+        Split the dataset randomly n-times (defined by self.iterations) for k-fold
         cross validation. The size of the test_size is defined by self.test_size. 
         
         Output:
             l_folds = list containing the indices for the train/test
                 entries, required to contstruct the k-folds.
         """
-        l_folds = []
-        for i in range(self.rounds): 
-            ss = StratifiedKFold(n_splits=self.folds, shuffle=True, random_state=self.seed+i)
-            l_folds.extend(ss.split(self.X, self.y))
+        ss = ShuffleSplit(n_splits=self.iterations, test_size=self.test_size, random_state=self.seed)
+        l_folds = ss.split(self.X)
         return l_folds
     
     def binarizeLabel(self, l, true_label='y'):
@@ -259,7 +243,7 @@ class TextClassification(object):
         d_conf = {}
         iterat = 0
         print('\nGeneral settings for training/testing:')
-        print('Method = Cross Validation ' + (str(self.rounds) + 'x')*(self.rounds!=1)  + str(self.folds) + '-fold')
+        print('Method = Cross Validation ' + str(self.iterations) + '-fold')
         print('\tfraction test:\t', self.test_size, '\n')
         for clf in range(len(self.model_list)):
             lbl = self.names[iterat]
@@ -430,7 +414,7 @@ class TextClassification(object):
         l_roc, aucs, l_f1 = [], [], []
         fpr_scale = np.linspace(0, 1, 100)
         tprs = []
-        for x in range(len(self.d_conf[lbl])): # loop through rounds
+        for x in range(len(self.d_conf[lbl])): # loop through iterations
             #scores = self.scores(lbl, x)
             tpr, fpr = self.d_conf[lbl][x]['tpr'], self.d_conf[lbl][x]['fpr']#scores[1], scores[3]
             tprs.append(interp(fpr_scale, fpr, tpr))
@@ -473,7 +457,7 @@ class TextClassification(object):
         """
         l_prec, aucs, l_f1 = [], [], []
         recall_scale = np.linspace(0, 1, 100)
-        for x in range(len(self.d_conf[lbl])): # loop through rounds
+        for x in range(len(self.d_conf[lbl])): # loop through iterations
             tpr, prec = self.d_conf[lbl][x]['tpr'], self.d_conf[lbl][x]['prc']
             prec[0] = 0.0
             inter_prec = interp(recall_scale, tpr, prec)
@@ -1314,9 +1298,8 @@ class TextClassification(object):
         plt.xticks(np.arange(1, 1 + len(top_coefficients)), feature_names[top_coefficients], rotation=60, ha='right')
         plt.show()
         
-<<<<<<< HEAD
-=======
-    def plotF1scores(self, lbls=[], debug=False):
+        
+    def plotF1scores(self, debug=False):
         """
         Plot mean F1-scores for the 10 fold cross validation with error (std) bars
         
@@ -1324,66 +1307,16 @@ class TextClassification(object):
             debug = print actual results
         """       
         x_pos, l_mean, l_std = self.calculateF1()
-        
-        if lbls == []:
-            lbls = list(self.d_f1.keys())# + '\n' +
->>>>>>> a3c0611c78d2349f40267ea7359455d75ade1796
+        lbls = list(self.d_f1.keys())
         
         if debug:
             for x in range(len(lbls)):
                 print(lbls[x], ':', '%.2f+/-%.2f' % (l_mean[x], l_std[x]))
         
-        my_colors = []
-        for x in range(len(lbls)):
-            if my_colors == self.ref:
-                my_colors.append('blue')
-            else:
-                my_colors.append('b')
         # Build the plot
         plt.figure(figsize=(14,14))
         fig, ax = plt.subplots()
-        ax.bar(x_pos, l_mean, yerr=l_std, align='center', alpha=0.5, ecolor='black', color=my_colors, capsize=10)
-        #barlist=plt.bar([1,2,3,4], [1,2,3,4])
-        #barlist[0].set_color('r')
-        ax.set_ylabel('F1-score +/- std')
-        ax.set_xticks(x_pos)
-        ax.tick_params(axis='both', which='major', labelsize=9)
-        ax.set_xticklabels(lbls, rotation=45)
-        ax.set_title('Barplot with F1-score for the different classifiers')
-        ax.yaxis.grid(True)
-
-        # Save the figure and show
-        plt.tight_layout()
-        plt.savefig('figures/results/Bar_plot_f1.png')
-        plt.show()
-        
-    def plotF1scores(self, lbls=[], debug=False):
-        """
-        Plot mean F1-scores for the 10 fold cross validation with error (std) bars
-        
-        Input:
-            debug = print actual results
-        """       
-        x_pos, l_mean, l_std = self.calculateF1()
-        
-        if lbls != []:
-            lbls = list(self.d_f1.keys())# + '\n' +
-        
-        if debug:
-            for x in range(len(lbls)):
-                print(lbls[x], ':', '%.2f+/-%.2f' % (l_mean[x], l_std[x]))
-        
-        my_colors = []
-        for x in range(len(lbls)):
-            if lbls[x] == self.ref:
-                my_colors.append('blue')
-            else:
-                my_colors.append('b')
-
-        # Build the plot
-        plt.figure(figsize=(14,14))
-        fig, ax = plt.subplots()
-        ax.bar(x_pos, l_mean, yerr=l_std, align='center', alpha=0.5, ecolor='black', color=my_colors, capsize=10)
+        ax.bar(x_pos, l_mean, yerr=l_std, align='center', alpha=0.5, ecolor='black', capsize=10)
         ax.set_ylabel('F1-score +/- std')
         ax.set_xticks(x_pos)
         ax.tick_params(axis='both', which='major', labelsize=9)
@@ -1489,7 +1422,6 @@ class TextClassification(object):
         plt.legend()
         plt.title(name + ' performance on different proportions')
         return plt, d_aucs
-<<<<<<< HEAD
     
     def plotPrevalencePR(self, name, cv=True, l_range_prev=[0.1, 0.25, 0.5, 0.75, 0.9], colors=[]):
         """
@@ -1597,23 +1529,6 @@ class TextClassification(object):
                 interest over all rounds and folds (5x2 CV)
             list_ref = list of performance scores for the 
                 reference model
-=======
-
-    def ttest_5x2cv(self, list_pred, list_ref, verbose=False):
-        """
-        Calculate the statistical significance with a paired t-test
-        over the 5x2 fold cross validation. The P-value describes 
-        the probability that the observed difference between 
-        the Machine learning Model and the reference in the 
-        validation data is not true. 
-
-        Input:
-            list_pred = list of performance scores for the model of 
-                interest over all rounds and folds (5x2 CV)
-            list_ref = list of performance scores for the 
-                reference model
-
->>>>>>> a3c0611c78d2349f40267ea7359455d75ade1796
         Output:
             t_bar = calculated t-statistic (5 DF)
             p = p-value indicating statistical significance
