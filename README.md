@@ -4,7 +4,7 @@
 [![GitHub stars](https://img.shields.io/github/stars/levrex/DiagnosisExtraction_ML)](https://github.com/levrex/DiagnosisExtraction_ML/stargazers)
 [![GitHub forks](https://img.shields.io/github/forks/levrex/DiagnosisExtraction_ML)](https://github.com/levrex/DiagnosisExtraction_ML/network)
 ![GitHub issues](https://img.shields.io/github/issues/levrex/DiagnosisExtraction_ML)
-![GitHub](https://img.shields.io/github/license/levrex/DiagnosisExtraction_ML)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 
 # DiagnosisExtraction_ML
