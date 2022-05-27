@@ -3,6 +3,7 @@ Pipeline for building Machine Learning Classifiers tasked with extracting the di
 
 Note: we used this pipeline for our study, published here: https://doi.org/10.2196/23930. We identified Rheumatoid Arthritis patients in EHR-data from two different centers to examine the universal applicability.
 
+
 ## Installation
 
 
@@ -20,22 +21,11 @@ $ conda install -c anaconda notebook
 ### Importing required modules
 Before running, please install the dependencies. 
 
-#### Option 1: Create environment with conda (YML)
+#### Option 1: create custom kernel with conda (Bash script)
 prerequisite: conda3
 
 ```sh
-$ conda env create -f ml_env.yml
-$ conda activate ml_env
-```
-
-Create kernel:
-```sh
-$ ipython kernel install --user --name diagnosis_ra
-```
-
-Deactivate environment:
-```sh
-$ conda deactivate
+$ bash build_kernel.sh
 ```
 
 #### Option 2: pip
@@ -45,12 +35,9 @@ prerequisite: pip
 $ pip install -r requirements.txt
 ```
 
-#### Option 3: create custom kernel with conda (Bash script)
-prerequisite: conda3
-
-```sh
-$ bash build_kernel.sh
-```
+## Interactive demo
+Our tool is available online as an interactive kaggle session:
+[Click here for Kaggle Session](https://www.kaggle.com/code/levrex/notebook-diagnosis-extraction) 
 
 ## How to start
 Start a notebook session in the terminal 
